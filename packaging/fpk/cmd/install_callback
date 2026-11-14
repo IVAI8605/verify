@@ -1,0 +1,82 @@
+#!/bin/bash
+
+### 安装后回调：按用户向导选择启用 Intel 核显 GuC/HuC（i915.enable_guc=3）。
+### 失败不会阻断安装，仅记录日志。
+
+LOG_FILE="${TRIM_PKGVAR}/info.log"
+mkdir -p "${TRIM_PKGVAR}" 2>/dev/null
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}" 2>/dev/null
+    if [ -n "${TRIM_TEMP_LOGFILE}" ]; then
+        echo "$1" >> "${TRIM_TEMP_LOGFILE}" 2>/dev/null
+    fi
+}
+
+if [ "${wizard_enable_guc}" != "true" ]; then
+    log_msg "未选择启用核显 GuC/HuC，跳过内核参数配置"
+    exit 0
+fi
+
+if [ ! -d /sys/module/i915 ]; then
+    log_msg "未检测到 Intel i915 驱动，跳过 GuC/HuC 配置"
+    exit 0
+fi
+
+if [ ! -e /dev/dri/renderD128 ] && [ ! -e /dev/dri/renderD129 ]; then
+    log_msg "未检测到 /dev/dri 渲染节点，跳过 GuC/HuC 配置"
+    exit 0
+fi
+
+cur=$(cat /sys/module/i915/parameters/enable_guc 2>/dev/null | tr -d '[:space:]')
+log_msg "当前 i915.enable_guc=${cur:-未知}"
+if [ "${cur}" = "3" ]; then
+    log_msg "GuC/HuC 已启用，无需修改"
+    exit 0
+fi
+
+# v1.30.1：备份已存在则不覆盖——避免上一次的好备份被这次覆盖掉
+GRUB_FILE=/etc/default/grub
+if [ ! -f "${GRUB_FILE}" ]; then
+    log_msg "未找到 ${GRUB_FILE}，跳过 GuC/HuC 配置"
+    exit 0
+fi
+
+if [ ! -f "${GRUB_FILE}.verify.bak" ]; then
+    cp -f "${GRUB_FILE}" "${GRUB_FILE}.verify.bak" 2>/dev/null
+fi
+
+GUC_MARKER="${TRIM_PKGVAR}/guc_written"
+OLD_GUC=$(sed -n -E 's/.*i915\.enable_guc=([0-9]+).*/\1/p' "${GRUB_FILE}" | head -1)
+
+if grep -q "i915.enable_guc" "${GRUB_FILE}"; then
+    sed -i -E 's/i915\.enable_guc=[0-9]+/i915.enable_guc=3/g' "${GRUB_FILE}"
+    # v3.10.9：记下被覆盖的原值，卸载时只恢复我们改过的那一段。
+    # 没有这个标记，卸载无从判断「这行是我们写的还是用户自己的」。
+    if [ -n "${OLD_GUC}" ]; then
+        printf 'mode=replaced\nold=%s\n' "${OLD_GUC}" > "${GUC_MARKER}" 2>/dev/null
+    else
+        printf 'mode=appended\n' > "${GUC_MARKER}" 2>/dev/null
+    fi
+else
+    sed -i -E 's|(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*)"|\1 i915.enable_guc=3"|' "${GRUB_FILE}"
+    printf 'mode=appended\n' > "${GUC_MARKER}" 2>/dev/null
+fi
+
+if ! grep -q "i915.enable_guc=3" "${GRUB_FILE}"; then
+    # 兜底：GRUB_CMDLINE_LINUX_DEFAULT 行缺失或格式异常
+    echo 'GRUB_CMDLINE_LINUX_DEFAULT="i915.enable_guc=3"' >> "${GRUB_FILE}"
+fi
+
+if command -v update-grub >/dev/null 2>&1; then
+    update-grub >> "${LOG_FILE}" 2>&1
+elif command -v grub-mkconfig >/dev/null 2>&1; then
+    grub-mkconfig -o /boot/grub/grub.cfg >> "${LOG_FILE}" 2>&1
+else
+    log_msg "未找到 update-grub / grub-mkconfig，请手动执行 update-grub"
+    exit 0
+fi
+
+log_msg "已写入 i915.enable_guc=3 并更新 GRUB，重启飞牛后生效（可用 dmesg | grep -i guc 验证）"
+
+exit 0

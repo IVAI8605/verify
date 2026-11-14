@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>查重助手 · Verify</title>
+<meta name="description" content="飞牛 NAS 上的重复文件查重工具：精确重复、相似视频、同名文件与文件健康检查，删除先进隔离区。">
+<link rel="stylesheet" href="ui/styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="side-top">
+      <span class="mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/><path d="M8 9.5h5M8 12h5"/></svg></span>
+      <span class="wordmark">查重助手</span>
+      <span class="ver mono" id="ver">v3.26.1</span>
+    </div>
+    <nav class="side-nav" id="tabs">
+      <div class="ngroup">
+        <button class="tab" data-tab="overview">概览</button>
+      </div>
+      <div class="ngroup tint">
+        <span class="ngroup-label">查重</span>
+        <button class="tab" data-tab="results">结果</button>
+      </div>
+      <div class="ngroup">
+        <span class="ngroup-label">整理</span>
+        <button class="tab" data-tab="big">大文件</button>
+        <button class="tab" data-tab="search">文件搜索</button>
+        <button class="tab" data-tab="rename">重命名</button>
+        <button class="tab" data-tab="transcode">视频转码</button>
+      </div>
+      <div class="ngroup tint">
+        <span class="ngroup-label">文件</span>
+        <button class="tab" data-tab="health">文件健康</button>
+        <button class="tab" data-tab="trash">隔离区</button>
+        <button class="tab" data-tab="import">导入</button>
+      </div>
+      <div class="ngroup">
+        <span class="ngroup-label">系统</span>
+        <button class="tab" data-tab="help">操作手册</button>
+        <button class="tab" data-tab="oplog">操作记录</button>
+        <button class="tab" data-tab="settings">设置</button>
+      </div>
+    </nav>
+    <div class="side-foot">
+      <span class="hint">删除先进隔离区，可恢复</span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="btn ghost menu" id="navToggle" aria-label="打开导航" aria-expanded="false" aria-controls="tabs">菜单</button>
+      <h1 class="screen" id="screenTitle">概览</h1>
+      <button class="helpbtn" id="screenHelp" data-act="help-link" data-sec="flow" title="看这一页怎么用" aria-label="查看本页的操作说明">?</button>
+      <div class="spacer"></div>
+      <span class="badge" id="exclusiveTask" style="display:none"></span>
+      <div class="prog" id="prog" style="display:none">
+        <span id="phase"></span>
+        <div class="pbar" id="pbar"><i></i></div>
+        <span id="ptext" class="mono"></span>
+      </div>
+      <button class="btn" id="pauseBtn" style="display:none">暂停</button>
+      <button class="btn" id="stopBtn" style="display:none">停止</button>
+      <button class="btn primary" id="scanBtn">新建查重</button>
+    </header>
+    <main id="view"></main>
+  </div>
+</div>
+<div class="scrim" id="scrim"></div>
+
+<div class="modal" id="modal"><div class="box">
+  <div class="mtop"><span class="ttl" id="mTitle">预览</span><div class="spacer"></div><button class="btn ghost" data-act="modal-cancel">关闭</button></div>
+  <div class="mbody" id="mBody"></div>
+</div></div>
+
+<div class="modal" id="dirModal"><div class="box">
+  <div class="mtop"><span class="ttl" id="dirTitle">选择目录</span><div class="spacer"></div><button class="btn ghost" data-act="dir-close">关闭</button></div>
+  <div class="mbody dirbody">
+    <div class="dirbar">
+      <button class="btn ghost" data-act="dir-up">上一级</button>
+      <span class="mono" id="dirPath"></span>
+      <button class="btn ghost" data-act="dir-mkdir">新建文件夹</button>
+    </div>
+    <!-- v3.5.1 修复：已授权但未自动发现的子目录（如 /vol3/1000/共享目录/子目录）可手动进入；服务端会做授权探测 -->
+    <div class="dirbar" style="margin-top:6px">
+      <input id="dirManual" placeholder="粘贴已授权路径，如 /vol3/1000/共享目录/子目录" style="flex:1;min-width:0">
+      <button class="btn ghost" data-act="dir-manual-go">转到</button>
+    </div>
+    <div class="dirroots" id="dirRoots"></div>
+    <div class="dirlister" id="dirList"></div>
+    <div class="dirsel" id="dirSel"></div>
+    <div class="dirfoot">
+      <span class="hint" id="dirHint"></span>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-act="dir-add-current">添加当前目录</button>
+      <button class="btn ghost" data-act="dir-close">取消</button>
+      <button class="btn primary" data-act="dir-ok">确定</button>
+    </div>
+  </div>
+</div></div>
+
+<div id="login"><div class="box">
+  <h2>需要访问令牌</h2>
+  <p>请输入此应用设置的访问令牌后继续。</p>
+  <input id="tokenInput" type="password" placeholder="访问令牌" autocomplete="current-password" aria-label="访问令牌">
+  <button class="btn primary" id="loginBtn">进入</button>
+  <p class="hint" style="margin-top:10px">首次启动会自动生成令牌，保存在应用数据目录下的 access-token.txt（fnOS 上默认在 @appdata/verify/data）。登录后可在设置页更换或清除。</p>
+</div></div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+
+<!-- v3.10.1：所有页面通用的返回顶部按钮，长结果滚动后才显示 -->
+<button class="to-top" id="toTop" type="button" aria-label="返回顶部" title="返回顶部">↑<span>顶部</span></button>
+
+<!-- v3.0.0：app.js 按职责拆成六个经典脚本，defer 保证按顺序执行；无 ES module、无构建 -->
+<script src="ui/helper.js" defer></script>
+<script src="ui/api.js" defer></script>
+<script src="ui/settings.js" defer></script>
+<script src="ui/view.js" defer></script>
+<script src="ui/modal.js" defer></script>
+<script src="ui/app.js" defer></script>
+</body>
+</html>

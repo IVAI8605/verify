@@ -1,0 +1,10 @@
+#!/bin/bash
+
+### 配置后钩子：fnpack 1.2.3 不强制要求，但保留飞牛模板默认结构，便于系统改环境变量时被调用。
+### 同上：设置存应用自身的 config.json 与 SQLite，这里只留一行时间戳。
+
+MSG="$(date '+%Y-%m-%d %H:%M') config_callback：配置后无额外动作（设置存应用自身配置）"
+echo "$MSG" >> /tmp/verify-fpk-hook.log 2>/dev/null
+[ -n "${TRIM_TEMP_LOGFILE}" ] && echo "$MSG" >> "${TRIM_TEMP_LOGFILE}" 2>/dev/null
+
+exit 0

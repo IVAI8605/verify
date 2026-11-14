@@ -1,0 +1,48 @@
+# v1.30.1：CI lint 门禁收口（此前 continue-on-error 基线模式）。
+# 只保留能发现实质缺陷的核心 linter；纯风格类（gofumpt/revive/gocritic/
+# contextcheck 等）存量过多，不在补丁版收口范围，后续大版本再统一治理。
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    # 错误处理与安全
+    - errcheck
+    - gosec
+    # 正确性
+    - govet
+    - staticcheck
+    - ineffassign
+    - misspell
+    # 未使用代码
+    - unused
+  settings:
+    gosec:
+      excludes:
+        # 错误忽略由 errcheck / 显式 `_ =` 处理，避免与 G104 重复告警
+        - G104
+    staticcheck:
+      # QF*（quickfix 建议类）与 ST*（英文文档注释规范）偏风格，不进门禁
+      checks: ["all", "-QF*", "-ST*"]
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # 测试文件豁免：gosec 权限断言是测试环境的刻意行为，staticcheck/misspell
+      # 会误报测试夹具（假路径名、故意的同值比较）。
+      - path: _test\.go
+        linters:
+          - gosec
+          - staticcheck
+          - misspell
+
+formatters:
+  enable:
+    - gofmt

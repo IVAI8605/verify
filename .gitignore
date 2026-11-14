@@ -1,0 +1,73 @@
+# 构建产物与本地发布包（统一放 dist/）
+dist/
+packaging/fpk/app/bin/
+backups/
+
+# 本地数据
+*.db
+*.db-wal
+*.db-shm
+
+# 临时文件
+*.log
+.DS_Store
+.screenshots/
+
+# 本地需求草稿与工作笔记
+/cache/
+
+# Agent 工作记忆，不进版本库
+.workbuddy/
+
+# Hallmark 本地审计产物（截图/记录），不进版本库
+.hallmark/
+**/.hallmark/
+
+# Agent 工具工作目录（本地缓存，2026-11-13 重构补规则）
+.box-agent/
+.box-agent-scratch/
+
+# cache\ 的等价临时目录名（规范第 2 节），重建后同样忽略
+/tmp/
+
+# 项目状态卡属本地工作状态，按 2026-11-13 口径放项目根且不入库（只忽略根上这一份）
+/项目状态卡.md
+
+# 本地二进制与覆盖率产物
+/verify
+/verify.exe
+coverage.out
+
+# 本地运行配置与凭据（config.json 内含访问令牌，不进版本库）
+/config.json
+.env
+
+# 根目录误留的安装包：正式产物统一输出到 dist/
+/*.fpk
+
+# 内部文档不随仓库分发：文件保留在本地磁盘，仅从版本库摘出。
+# 刻意逐条列确切路径、不用 docs/reports/ 这类目录通配——以后往这两个目录放对外文档时，
+# 不会被目录级规则连坐忽略。
+/docs/reports/安全审查报告-v3.17.2-移动云助手.md
+/docs/reports/豆包代码审查报告-v3.17.2.md
+/docs/reports/独立审查-20261109-第十二轮.md
+/docs/reports/独立审查-20261109-第十三轮.md
+/docs/reports/扩展名批量修复-执行前确认-20261109.md
+/docs/reports/审查-v3.17以来新代码-20261110.md
+/docs/reports/四功能执行前确认-20261109.md
+/docs/reports/真实数据可用性评估-20261109.md
+/docs/reports/Trae操控能力评估.md
+/docs/archive/release-清理-2026-11-10/Release-删除清单-方案A.md
+/docs/archive/release-清理-2026-11-10/Release备份-断点.md
+/docs/archive/release-清理-2026-11-10/releases-json-已移出.md
+/docs/archive/待落地方案-2026-11-10/任务闸门补齐-方案.md
+/docs/archive/待落地方案-2026-11-10/只读排查-待落地清单.md
+/docs/archive/待落地方案-2026-11-10/只读排查-隔离区分页方案.md
+/docs/archive/待落地方案-2026-11-10/只读排查-rebuild.patch
+/docs/archive/待落地方案-2026-11-10/只读排查-v3.25.2-readonly-round.patch
+/docs/版本规划-v3.18.0起.md
+/docs/修复规划-v3.17.3起.md
+/docs/版本修复计划-v3.26.0.md
+/docs/查重助手-交接-20261111.md
+/docs/Verify-项目记忆-压缩草稿-20261109.md
+

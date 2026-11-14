@@ -1,0 +1,10 @@
+#!/bin/bash
+
+### 安装前钩子：fnpack 1.2.3 实测要求本文件必须存在（缺失会导致打包失败）。
+### 本应用安装期不改内核参数、不建系统用户，所以只留一行时间戳，避免钩子静默空跑。
+
+MSG="$(date '+%Y-%m-%d %H:%M') install_init：安装前无额外动作"
+echo "$MSG" >> /tmp/verify-fpk-hook.log 2>/dev/null
+[ -n "${TRIM_TEMP_LOGFILE}" ] && echo "$MSG" >> "${TRIM_TEMP_LOGFILE}" 2>/dev/null
+
+exit 0

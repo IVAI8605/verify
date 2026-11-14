@@ -1,0 +1,10 @@
+#!/bin/bash
+
+### 升级前钩子：fnpack 1.2.3 实测要求本文件必须存在（缺失会导致打包失败）。
+### 库结构由程序启动时的 CREATE TABLE IF NOT EXISTS 自动兼容，这里只留一行时间戳。
+
+MSG="$(date '+%Y-%m-%d %H:%M') upgrade_init：升级前无额外动作（数据库自动迁移）"
+echo "$MSG" >> /tmp/verify-fpk-hook.log 2>/dev/null
+[ -n "${TRIM_TEMP_LOGFILE}" ] && echo "$MSG" >> "${TRIM_TEMP_LOGFILE}" 2>/dev/null
+
+exit 0

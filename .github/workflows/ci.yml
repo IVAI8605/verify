@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-build:
+    name: vet / lint / test / build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go version
+        run: go version
+
+      - name: Verify module
+        run: go mod verify
+
+      # 逐条核验 AGENTS.md 里可机械判断的断言，防止文档与代码脱节
+      - name: Doc assertions
+        run: bash scripts/check-agents-md.sh
+
+      - name: Vet
+        run: go vet ./...
+
+      # v1.30.1 收口：lint 基线已清零（.golangci.yml 只保留核心门禁），改为强制
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Test (race + coverage)
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      # 目标平台是飞牛 fnOS (linux/amd64)，CGO_ENABLED=0 保证单文件静态二进制。
+      # 版本注入待 internal/web.Version 由 const 改为 var 后启用：
+      #   -ldflags "-s -w -X verify/internal/web.Version=${GITHUB_REF_NAME#v}"
+      - name: Build linux/amd64
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w" -o dist/verify .
+          ls -lh dist/verify
+
+      # 不再上传构建产物：产物统一由 GitHub Release 分发，CI 再留档只会长期占用 Actions 存储配额
+      # （历史包袱已清：2026-11-13 删除 371 个 artifact 约 2.2 GB、7 个缓存约 717 MB）

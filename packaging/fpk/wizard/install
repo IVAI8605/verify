@@ -1,0 +1,17 @@
+[
+  {
+    "stepTitle": "核显加速（可选）",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "查重助手会调用飞牛系统自带的 FFmpeg。若你的设备为 Intel 核显（如 N5105、J4125 等），开启下面选项可在安装时写入内核参数 <b>i915.enable_guc=3</b>，启用 GuC/HuC 微控制器，让 QSV 硬解更稳定。<br><br>修改后<b>需要重启飞牛系统</b>才会生效；应用会在软解失败时自动回退，不会影响正常使用。"
+      },
+      {
+        "type": "switch",
+        "field": "wizard_enable_guc",
+        "label": "启用 Intel 核显 GuC/HuC（安装后需重启）",
+        "initValue": "false"
+      }
+    ]
+  }
+]

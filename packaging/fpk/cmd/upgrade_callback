@@ -1,0 +1,10 @@
+#!/bin/bash
+
+### 升级后钩子：fnpack 1.2.3 实测要求本文件必须存在（缺失会导致打包失败）。
+### 沿用安装时的 GuC/HuC 设置（不重复改 GRUB），服务由系统按 manifest 重启，只留一行时间戳。
+
+MSG="$(date '+%Y-%m-%d %H:%M') upgrade_callback：升级后无额外动作（沿用 GuC/HuC 设置）"
+echo "$MSG" >> /tmp/verify-fpk-hook.log 2>/dev/null
+[ -n "${TRIM_TEMP_LOGFILE}" ] && echo "$MSG" >> "${TRIM_TEMP_LOGFILE}" 2>/dev/null
+
+exit 0

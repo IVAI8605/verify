@@ -1,0 +1,42 @@
+#!/bin/bash
+
+### 卸载后回调：只清理本应用自己的标记文件，绝不修改 GRUB 或内核参数（v3.11.0 起）。
+###
+### 历史背景：旧版安装向导在用户勾选后会写入 i915.enable_guc=3 并留下
+### ${TRIM_PKGVAR}/guc_written 标记。v3.11.0 约定「卸载不动用户系统配置」，
+### 因此这里只识别标记并打印说明，不再执行任何 sed / update-grub。
+### 分不清归属时一律不删、不改，把处置方式明确告诉用户。
+
+LOG_FILE=/tmp/verify-uninstall.log
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}" 2>/dev/null
+}
+
+GUC_MARKER="${TRIM_PKGVAR}/guc_written"
+if [ -z "${TRIM_PKGVAR}" ] || [ ! -f "${GUC_MARKER}" ]; then
+    log_msg "未发现 GuC 写入标记；卸载不改动 GRUB 与内核参数"
+    exit 0
+fi
+
+MODE=$(sed -n 's/^mode=//p' "${GUC_MARKER}" | head -1)
+OLD_GUC=$(sed -n 's/^old=//p' "${GUC_MARKER}" | head -1)
+
+case "${MODE}" in
+replaced)
+    log_msg "安装时曾把 i915.enable_guc 从 ${OLD_GUC:-未知} 改为 3；按约定卸载不修改 GRUB。"
+    log_msg "如需恢复，请手动编辑 /etc/default/grub 将 i915.enable_guc 改回 ${OLD_GUC:-原值}，再执行 update-grub。"
+    ;;
+appended)
+    log_msg "安装时曾追加 i915.enable_guc=3；按约定卸载不修改 GRUB。"
+    log_msg "如需移除，请手动编辑 /etc/default/grub 删除该参数，再执行 update-grub。"
+    ;;
+*)
+    log_msg "GuC 标记无法识别（mode=${MODE:-空}），分不清哪段是应用写的；一律不改动 GRUB 与内核参数。"
+    ;;
+esac
+
+# 标记文件属于应用自己的数据，可以清理；GRUB 与 .bak 备份一律不动。
+rm -f "${GUC_MARKER}"
+log_msg "已清理应用自己的 GuC 标记，未修改 GRUB、未删除任何备份"
+exit 0

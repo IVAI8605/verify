@@ -1,0 +1,11 @@
+#!/bin/bash
+
+### 卸载前钩子：fnpack 1.2.3 实测要求本文件必须存在（缺失会导致打包失败）。
+### 卸载不主动删除用户数据目录（系统会保留 var/），也不修改 GRUB / 内核参数（v3.11.0），
+### 只留一行时间戳避免静默空跑。
+
+MSG="$(date '+%Y-%m-%d %H:%M') uninstall_init：卸载前无额外动作（保留数据目录，不修改 GRUB/内核参数）"
+echo "$MSG" >> /tmp/verify-fpk-hook.log 2>/dev/null
+[ -n "${TRIM_TEMP_LOGFILE}" ] && echo "$MSG" >> "${TRIM_TEMP_LOGFILE}" 2>/dev/null
+
+exit 0
