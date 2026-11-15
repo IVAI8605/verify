@@ -115,5 +115,15 @@ else
 	printf '%s\n' "$doc_out" | grep -E 'FAIL|结果' | head -20
 fi
 
+echo "[公开把关]"
+# 防「关键信息泄漏」（内网地址、本机路径、令牌、账号…），不防路径写法。
+# 放行清单在 .public-safety-allow，每条都带原因并会被打印出来。
+if ps_out=$(bash scripts/check-public-safety.sh 2>&1); then
+	ok "$(printf '%s\n' "$ps_out" | tail -1)"
+else
+	bad "check-public-safety.sh 有命中（处理或补放行）"
+	printf '%s\n' "$ps_out" | grep -E 'FAIL' | head -10
+fi
+
 printf '\nquick-check：%d 项通过，%d 项失败\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

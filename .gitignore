@@ -42,6 +42,9 @@ coverage.out
 /config.json
 .env
 
+# 公开把关脚本的本机真实值清单（账号/机器名/姓名），只在本机存在
+/.public-safety.local
+
 # 根目录误留的安装包：正式产物统一输出到 dist/
 /*.fpk
 

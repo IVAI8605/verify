@@ -24,19 +24,24 @@ if [ "$VERSION" != "$GO_VERSION" ]; then
 	exit 1
 fi
 
-# 发版前门禁（可选）：维护者若有独立的规范检查脚本，用环境变量 SPEC_CHECK 指过来。
+# 发版前门禁（默认执行）：检查器默认取仓库上一级的 _tool/spec-check/check-spec.ps1。
+# 为什么默认开启：漏跑门禁是静默失败，代价比多一条 WARN 高得多。
+# 为什么找不到时只告警：该检查器只存在于维护者的工作区，公开克隆下不保证存在，
+# 硬阻断会让外部构建完全跑不起来。
 # 为什么放在 go build 之前：构建一轮要几分钟，规范问题应在动手编译前就暴露。
-# 为什么不写默认路径：该检查器只存在于维护者本机，公开克隆没有它；硬编码会让外部构建
-# 在别的机器上静默依赖仓库外文件。
-if [ -n "${SPEC_CHECK:-}" ]; then
-	if command -v pwsh >/dev/null 2>&1 && [ -f "$SPEC_CHECK" ]; then
-		if ! pwsh -NoProfile -File "$SPEC_CHECK" -Project "$(pwd)" -Name "Verify查重助手" -Target "$VERSION" -IssuesOnly; then
+ROOT="$(pwd)"
+SPEC_CHECK="${SPEC_CHECK:-$(dirname "$ROOT")/_tool/spec-check/check-spec.ps1}"
+if [ -f "$SPEC_CHECK" ]; then
+	if command -v pwsh >/dev/null 2>&1; then
+		if ! pwsh -NoProfile -File "$SPEC_CHECK" -Project "$ROOT" -Name "Verify查重助手" -Target "$VERSION" -IssuesOnly; then
 			echo "FAIL: 规范检查未通过（见上方 FAIL 项），本次发版中止" >&2
 			exit 1
 		fi
 	else
-		echo "WARN: 已设置 SPEC_CHECK 但找不到 pwsh 或该脚本，跳过发版前检查" >&2
+		echo "WARN: 找到规范检查器但缺少 pwsh，已跳过：$SPEC_CHECK（可用 SPEC_CHECK 覆盖）" >&2
 	fi
+else
+	echo "WARN: 未找到规范检查器，已跳过：期望 $SPEC_CHECK（可用 SPEC_CHECK 环境变量覆盖）" >&2
 fi
 
 # -buildvcs=false：不把提交号写进二进制。大版本流程是「先装真机验证、后提交发布」，
@@ -67,14 +72,16 @@ fi
 echo "已生成：dist/verify-$VERSION.fpk"
 echo "校验值：dist/verify-$VERSION.fpk.sha256"
 
-# 归档（可选）：维护者用环境变量 RELEASE_ARCHIVE_ROOT 指定一个仓库外的根目录，
-# 脚本会在其中建 verify-v<版本>/ 成对放入包与校验值。
-# 为什么不设默认值：该目录只属于维护者本机，公开克隆只需要 dist/ 里这两件；
-# 写死默认路径会让外部构建在别人的磁盘上凭空造目录。
+# 归档（默认执行，但只在归档根已存在时动手）：默认根取仓库上一级的
+# _外置/产物/Verify查重助手，目录名沿用历史的 release-v<版本>。
+# 为什么默认开启：归档漏做的话，已删 Release 的本地副本就断了，事后补不回来。
+# 为什么缺目录只提示不 mkdir：该目录属于维护者的本机布局，公开克隆下一旦无条件
+# mkdir，就会在别人的磁盘上凭空造目录树并塞进一个包。
 # 为什么必须成对：.sha256 属于交付件的一部分，只搬包会留下「有包无校验」的形态，
 # 回滚时无法确认文件完整性。
-if [ -n "${RELEASE_ARCHIVE_ROOT:-}" ]; then
-	ARCH_DIR="$RELEASE_ARCHIVE_ROOT/verify-v$VERSION"
+RELEASE_ARCHIVE_ROOT="${RELEASE_ARCHIVE_ROOT:-$(dirname "$ROOT")/_外置/产物/Verify查重助手}"
+if [ -d "$RELEASE_ARCHIVE_ROOT" ]; then
+	ARCH_DIR="$RELEASE_ARCHIVE_ROOT/release-v$VERSION"
 	ARCH_FPK="$ARCH_DIR/verify-$VERSION.fpk"
 	ARCH_SUM="$ARCH_FPK.sha256"
 	mkdir -p "$ARCH_DIR"
@@ -102,4 +109,6 @@ if [ -n "${RELEASE_ARCHIVE_ROOT:-}" ]; then
 
 	echo "已归档：$ARCH_FPK"
 	echo "已归档：$ARCH_SUM"
+else
+	echo "INFO: 未检测到归档根，已跳过归档：$RELEASE_ARCHIVE_ROOT（dist 内产物已生成；可用 RELEASE_ARCHIVE_ROOT 覆盖）"
 fi

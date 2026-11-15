@@ -80,6 +80,7 @@ bash scripts/build-fpk.sh
 - `packaging/fpk/app/bin/verify` 与 `dist/verify-<版本>.fpk` 是构建产物，已被 `.gitignore` 忽略，**不要提交**
 - 涉及 `syscall.Stat_t` / `Statfs_t` 的包（engine、watch、web）在 Windows 目标下无法编译，`go vet` / `go test` / `gosec` / `errcheck` 都必须带 `GOOS=linux`；否则 SSA 分析会被跳过，taint 类规则不会执行
 - **不要凭印象断言工具是否存在**。`fnpack` 官方提供 Windows x86 版本（`fnpack-1.2.3-windows-amd64`，下载后去掉后缀即可运行），需自行安装并加入 PATH；`scripts/build-fpk.sh` 启动时会检查。同类判断一律先查官方文档
+- **公开前把关**：`bash scripts/check-public-safety.sh` 已挂进 `quick-check` 与 CI，扫三处（HEAD 树、待提交差异、可选 `--history`）。零容忍内网地址、本机绝对路径、邮箱、账号、令牌、私有仓地址、内部文档、构建产物；`/volN/`、`_外置`、`_tool` 只提示。确属误报的写进 `.public-safety-allow`（`glob<TAB>规则<TAB>原因`），门禁会逐条打印放行记录；本机真实值（账号、机器名、姓名）放 `.public-safety.local`，该文件不进仓库
 
 ### 开发工作流（省 Token 优先）
 
@@ -132,11 +133,22 @@ bash scripts/build-fpk.sh
 约定：
 
 - 提交信息使用 Conventional Commits：`feat:` / `fix:` / `docs:` / `refactor:` / `chore:`
-- 每个版本打 `vX.Y.Z` tag，并创建 GitHub Release（附 `dist/verify-<版本>.fpk`）
+- 每个版本在本地打 `vX.Y.Z` tag；只有对外发布版才创建 GitHub Release（附件只挂该版 `dist/verify-<版本>.fpk`）
 - **安装包文件名必须带版本号**（2026-11-07 起）：`scripts/build-fpk.sh` 从 manifest 读 `version=`，产物固定为 `dist/verify-<版本>.fpk`，Release 附件沿用同名；不要再用无版本号的 `dist/verify.fpk`
-- **大版本发布顺序（2026-11-02 调整）**：本地门禁 → 构建 `dist/verify-<版本>.fpk` → 飞牛正式「卸载 → 重装」并真机验证功能 → 提交 → tag → push → GitHub Release。Git 四项仍打包执行、不逐项确认；**真机验证不通过就先修，不发布**，数据目录必须保留
-- 构建统一走 `scripts/build-fpk.sh`（带 `-buildvcs=false`），保证发布前安装的包与最终 tag 附件是同一份、哈希一致
-- 非大版本补丁也先构建并做真机冒烟，再提交 / tag / push / Release；纯文档或仅文案版本可免重装
+- **大版本发布顺序（2026-11-02 调整）**：本地门禁 → 构建 `dist/verify-<版本>.fpk` → 飞牛正式「卸载 → 重装」并真机验证功能 → 提交 → tag → push → GitHub Release。Git 四项仍打包执行、不逐项确认；**真机验证不通过就先修，不发布**，数据目录必须保留。这条只适用于「对外发布的那一版」，日常迭代按下方两级节奏走
+- **推送需明确授权（2026-11-15 起，硬约束）**：未经用户明确授权，不得把本项目的代码、tag、Release 或安装包推送到 GitHub；建仓、改可见性、上传附件与 `gh release create` 同属推送类动作，一并适用。本地构建、`_外置` 归档、本地备份不受限制。**默认状态是「不发」**，只有用户明确说发，才执行 push / tag / Release / 上传附件——「门禁全绿」「验证通过」都不构成授权
+- 构建统一走 `scripts/build-fpk.sh`（带 `-buildvcs=false`），保证发布前安装的包与最终 tag 附件是同一份、哈希一致。脚本**默认**附带两个本机动作，公开克隆下会自动降级、不影响构建：
+  - 跨项目规范检查：默认取仓库上一级的 `_tool/spec-check/check-spec.ps1`，文件存在且 `pwsh` 可用就执行，FAIL 即中止发版；找不到只打一条 WARN（含期望路径）后继续
+  - 归档：默认根为仓库上一级的 `_外置/产物/Verify查重助手`，**仅当该目录已存在**时把包与 `.sha256` 成对放进 `release-v<版本>/`；目录不存在或同名归档已存在时打 INFO / 拒绝覆盖，不会 `mkdir` 出目录树
+  - 两者都可用环境变量 `SPEC_CHECK`、`RELEASE_ARCHIVE_ROOT` 覆盖
+- **两级发布节奏（2026-11-15 起，与上一条授权要求配套）**：
+  - **日常迭代只走本地**：改代码 → 同步五处版本号 → `CHANGELOG.md` 新增版本段 → 写 `cache/验证单/v<版本>.md` → `bash scripts/build-fpk.sh` 产出 `dist/verify-X.Y.Z.fpk` → 归档到 `_外置/产物/Verify查重助手/release-vX.Y.Z/` → 本地 commit + 本地打 tag。**不 push、不建 Release**
+  - **重大更新才对外发布一次**：`git push origin main`（不带 `--tags`）→ 只推当前这一版的 tag → 建一个 Release，只挂这一版的 fpk 附件；中间版本的安装包一律不上传
+  - **禁止 `git push --tags`**：本地 tag 会累积多版，一条命令就把每个中间版本都变成公开发布页。要发哪版就显式写全：`git push origin main vX.Y.Z`
+  - **Release 说明写累积差异**：描述「自上次对外发布基线（如 `v3.26.1`）以来的变更」，按主题合并成几组；不逐条罗列中间版本的 commit 或 CHANGELOG 条目
+  - **本地 tag 与远端 tag 不一致是预期状态**：远端只保留对外发布版的 tag；需要完整版本对照时以 `_外置/产物/Verify查重助手/` 下的 `release-v*` 归档目录为准
+  - **飞牛「卸载 → 重装」真机验证只在对外发布的那一版做一次**；日常本地迭代按验证单执行即可
+- 非大版本补丁在本地同样先构建、按验证单做真机冒烟再提交；纯文档或仅文案版本可免重装
 - CHANGELOG 按「新增 / 改进 / 修复 / 升级说明」分组，使用中文
 - 后续计划：用 `-X verify/internal/web.Version=...` 注入版本（需先把 `const` 改为 `var`），并用 `git-cliff` 从提交生成 CHANGELOG
 - **产物归位（2026-11-13 起）**：项目内 `dist\` 只留最近 2–3 个 fpk 副本；维护者另外在仓库外保存全部历史版本发布包（一版一目录，目录名与 tag 一致）
@@ -212,7 +224,7 @@ bash scripts/build-fpk.sh
 - [现状] 永久删除 / 清空隔离区在动文件前独立提交审计行，写入失败即拒绝操作（fail-closed）；其它操作审计失败只告警
 - [要求] 新增不可逆操作必须沿用「先记账、再动手」的顺序，且不得把审计行放进业务事务（业务回滚不能带走审计）
 - [要求] 任何操作记录都不得写入访问令牌、Cookie、Authorization 头或完整请求体；URL 只记 path 不记 query
-- [要求] 发布动作按「提交 → tag → push → Release」一次打包执行；任何版本都不要删除用户数据，也不要改动仓库外的历史归档
+- [要求] 发布动作按「提交 → tag → push → Release」一次打包执行（**执行前须按「版本与发布」取得用户明确授权**）；任何版本都不要删除用户数据，也不要改动仓库外的历史归档
 
 ### 完成前自检
 

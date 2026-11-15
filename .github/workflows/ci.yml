@@ -38,6 +38,10 @@ jobs:
       - name: Doc assertions
         run: bash scripts/check-agents-md.sh
 
+      # 公开前把关：拦内网地址、本机路径、令牌等关键信息泄漏（放行清单见 .public-safety-allow）
+      - name: Public safety
+        run: bash scripts/check-public-safety.sh --tree
+
       - name: Vet
         run: go vet ./...
 

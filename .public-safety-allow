@@ -1,0 +1,10 @@
+# 公开把关放行清单：一行一条 `<path-glob><TAB><rule><TAB><原因>`。
+# 只放行「确认不是真实泄露」的条目；每条都会被门禁打印成 ALLOW，不做静默跳过。
+# 新增前先看原文（bash scripts/check-public-safety.sh --show）。
+
+internal/oplog/oplog_test.go	ip-private	测试夹具用文档保留地址 10.0.0.7，非真实内网地址
+internal/store/oplog_test.go	ip-private	同上的审计记录夹具
+internal/export/import.go	path-abs-win	注释举例 C:\Users 说明分隔符折叠，不是本机路径
+internal/export/import_test.go	path-abs-win	CSV 夹具用 C:\Users\x 占位用户名
+internal/web/auth_test.go	token-assign	测试夹具 s3cret-token，非真实令牌
+internal/webauth/webauth_test.go	token-assign	同上
