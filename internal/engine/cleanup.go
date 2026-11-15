@@ -336,12 +336,7 @@ func (e *Engine) ruleCleanupGroups(ctx context.Context, p *store.CleanupPlan, r 
 	}
 	groups, _ := rules.Build(ctx, files, r, cfg.Volumes)
 	if p.Extensions != "" {
-		exts := map[string]bool{}
-		for _, x := range strings.Split(p.Extensions, ",") {
-			if x = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(x, "."))); x != "" {
-				exts[x] = true
-			}
-		}
+		exts := cleanupExtSet(p.Extensions)
 		kept := groups[:0]
 		for _, g := range groups {
 			for _, f := range g.Files {
@@ -445,18 +440,27 @@ func (e *Engine) pagedGroups(ctx context.Context, q store.GroupQuery, exact bool
 	return out, nil
 }
 
+// cleanupExtSet 把计划里的逗号分隔扩展名解析成小写集合：去空白、去前导点、忽略空项。
+// v1.42：ruleCleanupGroups 与 filterCleanupGroups 两处曾各自手写同一段解析，收敛防漂移；
+// 顺带修正此前「先去点后去空白」导致 `" .mp4 "` 这类带空格项漏去点的问题。
+func cleanupExtSet(raw string) map[string]bool {
+	set := map[string]bool{}
+	for _, x := range strings.Split(raw, ",") {
+		x = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(x)), ".")
+		if x != "" {
+			set[x] = true
+		}
+	}
+	return set
+}
+
 // filterCleanupGroups 对内存分组（视频/音频）按计划条件与扫描根裁剪。
 func filterCleanupGroups(groups []store.Group, p *store.CleanupPlan, roots []string) []store.Group {
 	minCount := p.MinCount
 	if minCount < 2 {
 		minCount = 2
 	}
-	exts := map[string]bool{}
-	for _, x := range strings.Split(p.Extensions, ",") {
-		if x = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(x, "."))); x != "" {
-			exts[x] = true
-		}
-	}
+	exts := cleanupExtSet(p.Extensions)
 	out := make([]store.Group, 0, len(groups))
 	for _, g := range groups {
 		var files []store.FileRow

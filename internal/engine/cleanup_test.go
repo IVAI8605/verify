@@ -90,3 +90,20 @@ func TestPickCleanupKeep(t *testing.T) {
 		t.Fatalf("largest_size 应保留 /b，得到下标 %d", i)
 	}
 }
+
+// TestCleanupExtSet 扩展名集合解析：去点、去空白、转小写、忽略空项、去重。
+func TestCleanupExtSet(t *testing.T) {
+	got := cleanupExtSet(" .MP4 , mkv,, .mkv , ,AVI")
+	want := map[string]bool{"mp4": true, "mkv": true, "avi": true}
+	if len(got) != len(want) {
+		t.Fatalf("解析结果 %v，期望 %v", got, want)
+	}
+	for k := range want {
+		if !got[k] {
+			t.Fatalf("缺少扩展名 %q，实际 %v", k, got)
+		}
+	}
+	if len(cleanupExtSet("")) != 0 {
+		t.Fatal("空串应得到空集合")
+	}
+}
