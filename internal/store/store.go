@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 	"verify/internal/applog"
+	"verify/internal/fname"
 	"verify/internal/perm"
 
 	_ "modernc.org/sqlite"
@@ -1239,7 +1240,7 @@ func (s *Store) renameFilePathsChunk(ctx context.Context, pairs [][2]string) ([]
 	for _, pr := range pairs {
 		oldPath, newPath := pr[0], pr[1]
 		name := filepath.Base(newPath)
-		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), ".")
+		ext := fname.Ext(name)
 		if _, err := delStmt.ExecContext(ctx, newPath); err != nil {
 			return nil, err
 		}

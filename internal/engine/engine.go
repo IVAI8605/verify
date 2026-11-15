@@ -19,6 +19,7 @@ import (
 	"verify/internal/apperr"
 	"verify/internal/applog"
 	"verify/internal/config"
+	"verify/internal/fname"
 	"verify/internal/hashx"
 	"verify/internal/store"
 	"verify/internal/taskguard"
@@ -1198,7 +1199,7 @@ func fileInfoOf(path, root string, info fs.FileInfo) store.FileInfo {
 		Nlink:  nlink,
 		Inode:  inode,
 		Dev:    dev,
-		Ext:    strings.TrimPrefix(strings.ToLower(filepath.Ext(info.Name())), "."),
+		Ext:    fname.Ext(info.Name()),
 	}
 }
 

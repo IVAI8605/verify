@@ -7,6 +7,7 @@
 package fname
 
 import (
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -71,6 +72,12 @@ func Stem(name string) string {
 		return name[:i]
 	}
 	return name
+}
+
+// Ext 归一扩展名：取 filepath.Ext 后转小写并去掉前导点（".MP4" → "mp4"）。
+// v1.42：engine/video/store 三处曾各自手写同一表达式，收敛到这里防漂移。
+func Ext(name string) string {
+	return strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), ".")
 }
 
 // editDistanceLE1 判断两串编辑距离是否 ≤1（插入/删除/替换）。

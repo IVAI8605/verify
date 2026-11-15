@@ -120,3 +120,20 @@ func TestStemAndHasLetters(t *testing.T) {
 		t.Fatal("含字母/汉字应判 true")
 	}
 }
+
+// TestExt 扩展名归一：大小写、前导点、多点、无扩展名与隐藏文件。
+func TestExt(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"movie.MP4", "mp4"},
+		{"a.tar.GZ", "gz"},
+		{"noext", ""},
+		{".hidden", "hidden"},
+		{"trailing.", ""},
+		{"片名.MKV", "mkv"},
+	}
+	for _, c := range cases {
+		if got := Ext(c.in); got != c.want {
+			t.Fatalf("Ext(%q)=%q，期望 %q", c.in, got, c.want)
+		}
+	}
+}

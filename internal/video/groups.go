@@ -5,9 +5,8 @@ package video
 
 import (
 	"math"
-	"path/filepath"
 	"sort"
-	"strings"
+	"verify/internal/fname"
 	"verify/internal/phash"
 	"verify/internal/store"
 )
@@ -219,7 +218,7 @@ func FindGroupsMode(items []store.VideoFP, audioThr float64, maxHamb int, verify
 				Name:     v.Name,
 				Size:     v.Size,
 				Mtime:    v.Mtime,
-				Ext:      strings.TrimPrefix(strings.ToLower(filepath.Ext(v.Name)), "."),
+				Ext:      fname.Ext(v.Name),
 				Duration: v.Duration,
 				Thumb:    v.Thumb,
 				MediaMeta: store.MediaMeta{
@@ -402,7 +401,7 @@ func FindIntroGroups(items []store.IntroFP, seconds int, audioThr float64, maxHa
 				Name:     v.Name,
 				Size:     v.Size,
 				Mtime:    v.Mtime,
-				Ext:      strings.TrimPrefix(strings.ToLower(filepath.Ext(v.Name)), "."),
+				Ext:      fname.Ext(v.Name),
 				Duration: v.Duration,
 				Thumb:    v.Thumb,
 				MediaMeta: store.MediaMeta{
