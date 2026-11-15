@@ -15,8 +15,11 @@ import (
 // 键与方向均为白名单映射，外部输入永远不进入 SQL/比较器字符串。
 
 // groupSortKeys 是允许的排序键。
+// v1.42：补入 path/type——sortGroups 早有对应分支，但白名单漏了它们，
+// 导致 ?sort=path/type 静默回退 waste（媒体/文件夹/片头等内存排序端点受影响）。
 var groupSortKeys = map[string]bool{
 	"waste": true, "total_size": true, "count": true, "name": true,
+	"path": true, "type": true,
 }
 
 // sortParam 从请求读 sort/order（非法值回退默认：waste/desc）。
