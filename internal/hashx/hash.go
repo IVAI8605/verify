@@ -6,10 +6,10 @@ package hashx
 
 import (
 	"encoding/hex"
-	"fmt"
 	"io"
 	"os"
 	"runtime"
+	"strconv"
 	"sync"
 
 	"github.com/klauspost/cpuid/v2"
@@ -37,7 +37,10 @@ func QuickHash(path string, size int64) (string, error) {
 	defer func() { _ = f.Close() }()
 
 	h := blake3.New(32, nil)
-	if _, err := fmt.Fprintf(h, "%d:", size); err != nil {
+	var sizeBuf [20]byte
+	prefix := strconv.AppendInt(sizeBuf[:0], size, 10)
+	prefix = append(prefix, ':')
+	if _, err := h.Write(prefix); err != nil {
 		return "", err
 	}
 	if size <= QuickChunk*2 {
