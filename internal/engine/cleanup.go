@@ -491,20 +491,14 @@ func filterCleanupGroups(groups []store.Group, p *store.CleanupPlan, roots []str
 	return out
 }
 
+// underRoots 判断文件是否落在任一扫描根内；空 roots 表示不限（全部通过）。
+// v1.42：前缀匹配逻辑收敛到 pathUnderAny（会折叠 ./.. 并统一分隔符），
+// 这里只补「空 roots=true」这层语义，避免与 protect 各写一份前缀判定而漂移。
 func underRoots(path string, roots []string) bool {
 	if len(roots) == 0 {
 		return true
 	}
-	for _, r := range roots {
-		r = strings.TrimRight(strings.TrimSpace(r), "/")
-		if r == "" {
-			continue
-		}
-		if path == r || strings.HasPrefix(path, r+"/") {
-			return true
-		}
-	}
-	return false
+	return pathUnderAny(path, roots)
 }
 
 // pickCleanupKeep 按保留策略返回应保留的文件下标。

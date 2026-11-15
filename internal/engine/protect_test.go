@@ -23,3 +23,27 @@ func TestPathUnderAnyCleansRelativeSegments(t *testing.T) {
 		}
 	}
 }
+
+// TestUnderRootsEmptyMeansAll 守住 underRoots 的关键语义：空 roots=true，
+// 且非空时与 pathUnderAny 一致（含目录本身、排除同前缀兄弟目录）。
+func TestUnderRootsEmptyMeansAll(t *testing.T) {
+	if !underRoots("/any/path.mkv", nil) {
+		t.Fatal("空 roots 应视为不限（true）")
+	}
+	if underRoots("/any/path.mkv", []string{"", "   "}) {
+		t.Fatal("len(roots)>0 但全是空白项时应无匹配（false），与原语义一致")
+	}
+	roots := []string{"/vol1/keep", "/vol5/1000/x"}
+	cases := map[string]bool{
+		"/vol1/keep":         true,
+		"/vol1/keep/a.mkv":   true,
+		"/vol1/keep2/a.mkv":  false,
+		"/vol5/1000/x/b.mp4": true,
+		"/vol2/keep/a.mkv":   false,
+	}
+	for p, want := range cases {
+		if got := underRoots(p, roots); got != want {
+			t.Fatalf("underRoots(%q)=%v，期望 %v", p, got, want)
+		}
+	}
+}
