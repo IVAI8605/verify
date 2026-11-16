@@ -174,7 +174,7 @@ IVAI8605。
 │   └── web/                # HTTP API + 内嵌 Web UI
 ├── packaging/fpk/          # 飞牛 fpk 打包目录
 ├── scripts/                # 构建与自检脚本
-├── docs/                   # 设计与测试方案文档
+├── docs/                   # 开发速查（docs/README.md）+ 对外方案文档
 ├── cache/                  # 本地草稿、验证单与测试证据（不纳入 git）
 └── dist/                   # 构建产物，只留最近 2–3 个；历史发布包不在仓库内
 ```

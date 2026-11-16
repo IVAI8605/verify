@@ -49,28 +49,8 @@ coverage.out
 /*.fpk
 
 # 内部文档不随仓库分发：文件保留在本地磁盘，仅从版本库摘出。
-# 刻意逐条列确切路径、不用 docs/reports/ 这类目录通配——以后往这两个目录放对外文档时，
-# 不会被目录级规则连坐忽略。
-/docs/reports/安全审查报告-v3.17.2-移动云助手.md
-/docs/reports/豆包代码审查报告-v3.17.2.md
-/docs/reports/独立审查-20261109-第十二轮.md
-/docs/reports/独立审查-20261109-第十三轮.md
-/docs/reports/扩展名批量修复-执行前确认-20261109.md
-/docs/reports/审查-v3.17以来新代码-20261110.md
-/docs/reports/四功能执行前确认-20261109.md
-/docs/reports/真实数据可用性评估-20261109.md
-/docs/reports/Trae操控能力评估.md
-/docs/archive/release-清理-2026-11-10/Release-删除清单-方案A.md
-/docs/archive/release-清理-2026-11-10/Release备份-断点.md
-/docs/archive/release-清理-2026-11-10/releases-json-已移出.md
-/docs/archive/待落地方案-2026-11-10/任务闸门补齐-方案.md
-/docs/archive/待落地方案-2026-11-10/只读排查-待落地清单.md
-/docs/archive/待落地方案-2026-11-10/只读排查-隔离区分页方案.md
-/docs/archive/待落地方案-2026-11-10/只读排查-rebuild.patch
-/docs/archive/待落地方案-2026-11-10/只读排查-v3.25.2-readonly-round.patch
-/docs/版本规划-v3.18.0起.md
-/docs/修复规划-v3.17.3起.md
-/docs/版本修复计划-v3.26.0.md
-/docs/查重助手-交接-20261111.md
-/docs/Verify-项目记忆-压缩草稿-20261109.md
+# 2026-11-17 精简：旧规划与审查报告整体移到项目外隔离区，以下逐条清单已作废；
+# 新增内部文档时再按确切路径补一行，不做目录级通配。
 
+# Go 构建缓存（GOCACHE 已指到项目外共享缓存，见 ~/.config/go/env）
+/go-build/
