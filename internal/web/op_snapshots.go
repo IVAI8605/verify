@@ -17,7 +17,7 @@ import (
 // 每个快照最多返回 200 条明细，差异项优先，避免大操作把响应撑爆。
 func (s *Server) handleOpSnapshots(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -36,7 +36,7 @@ func (s *Server) handleOpSnapshots(w http.ResponseWriter, r *http.Request) {
 
 	total, list, err := s.st.ListOpSnapshots(ctx, page, pageSize, kind, result, keyword, 200)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": "读取操作快照失败：" + err.Error()})
+		writeJSON(w, 500, errorResponse{Error: "读取操作快照失败：" + err.Error()})
 		return
 	}
 	snapshots := make([]map[string]any, 0, len(list))
@@ -72,7 +72,5 @@ func (s *Server) handleOpSnapshots(w http.ResponseWriter, r *http.Request) {
 			"items_truncated": it.ItemsTruncated,
 		})
 	}
-	writeJSON(w, 200, map[string]any{
-		"total": total, "page": page, "page_size": pageSize, "snapshots": snapshots,
-	})
+	writeJSON(w, 200, opSnapshotsResponse{Total: total, Page: page, PageSize: pageSize, Snapshots: snapshots})
 }

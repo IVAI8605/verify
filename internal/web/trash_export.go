@@ -38,43 +38,43 @@ import (
 // GET /api/trash/export?all=true 或 ?ids=1,2,3。
 func (s *Server) handleTrashExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	wantAll := strings.EqualFold(r.URL.Query().Get("all"), "true")
 	ids, err := parseIDList(r.URL.Query().Get("ids"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "ids 参数应为逗号分隔的整数"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "ids 参数应为逗号分隔的整数"})
 		return
 	}
 	if !wantAll && len(ids) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "未指定导出条目"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未指定导出条目"})
 		return
 	}
 
 	all, err := s.st.ListTrash(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
 	// v3.10.10（第五轮 P2-1）：导出前同样清掉幽灵行，导出清单里不再出现空条目。
 	all = s.e.HealTrashRows(r.Context(), all)
 	rows := selectTrashRows(all, ids, wantAll)
 	if len(rows) == 0 {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "没有可导出的隔离区条目"})
+		writeJSON(w, http.StatusNotFound, errorResponse{Error: "没有可导出的隔离区条目"})
 		return
 	}
 	// v3.10.10（P2-5）：导出先写暂存文件再写 zip，峰值约源文件总量 2 倍且都落在
 	// 缓存目录（与 verify.db 同卷）。空间不足时不提前拦住，写满后 SQLite 写失败
 	// 会留下「磁盘已动、索引未写」的中间态。
 	if err := s.trashExportSpaceCheck(rows); err != nil {
-		writeJSON(w, http.StatusInsufficientStorage, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusInsufficientStorage, errorResponse{Error: err.Error()})
 		return
 	}
 
 	tmp, err := os.CreateTemp(s.cacheDir(), "trash-export-*.zip")
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "创建导出临时文件失败：" + err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "创建导出临时文件失败：" + err.Error()})
 		return
 	}
 	defer func() {
@@ -86,16 +86,16 @@ func (s *Server) handleTrashExport(w http.ResponseWriter, r *http.Request) {
 	if werr != nil {
 		// v3.10.8：zip 没写完整就绝不能标记「已备份」——否则用户会据此永久删除，
 		// 而手里那个下载包其实打不开，隔离区副本成了唯一且即将被删的证据。
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "导出包写入失败：" + publicErrorText(werr.Error())})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "导出包写入失败：" + publicErrorText(werr.Error())})
 		return
 	}
 	if len(exportedIDs) == 0 && len(skipped) == 0 {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "隔离区条目均已失效"})
+		writeJSON(w, http.StatusNotFound, errorResponse{Error: "隔离区条目均已失效"})
 		return
 	}
 	sz, err := tmp.Stat()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
 	name := "verify-trash-" + time.Now().Format("20060102-150405") + ".zip"

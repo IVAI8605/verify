@@ -37,23 +37,23 @@ type aiExplainReason struct {
 // handleRetainExplain 为当前页分组生成 AI 解释：POST /api/retain/explain。
 func (s *Server) handleRetainExplain(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	cfg := s.cfg.Get()
 	if !cfg.AIEnabled || strings.TrimSpace(cfg.AIEndpoint) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "未启用 AI 连接器，请到设置页填写本地模型地址"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未启用 AI 连接器，请到设置页填写本地模型地址"})
 		return
 	}
 	var body struct {
 		Groups []aiExplainGroup `json:"groups"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if len(body.Groups) == 0 || len(body.Groups) > 50 {
-		writeJSON(w, 400, map[string]any{"error": "分组数量应为 1–50"})
+		writeJSON(w, 400, errorResponse{Error: "分组数量应为 1–50"})
 		return
 	}
 	reasons := make([]aiExplainReason, 0, len(body.Groups))
@@ -74,7 +74,7 @@ func (s *Server) handleRetainExplain(w http.ResponseWriter, r *http.Request) {
 	if len(reasons) == 0 {
 		status = http.StatusBadGateway
 	}
-	writeJSON(w, status, map[string]any{"reasons": reasons, "failed": failed})
+	writeJSON(w, status, failedReasonsResponse{Reasons: reasons, Failed: failed})
 }
 
 // aiPrompt 构造紧凑提示词：只含文件名与已提取的媒体元数据。

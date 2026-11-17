@@ -39,8 +39,5 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	running, history := s.e.TaskSnapshot()
-	writeJSON(w, 200, map[string]any{
-		"running": running,
-		"history": history,
-	})
+	writeJSON(w, 200, tasksResponse{Running: running, History: history})
 }

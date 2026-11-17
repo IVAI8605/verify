@@ -11,7 +11,7 @@ import (
 // handleFolderStats 返回扫描目录下已索引文件数与总大小，供概览页悬浮卡使用（v2.2.0）。
 func (s *Server) handleFolderStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	p := strings.TrimSpace(r.URL.Query().Get("path"))
@@ -26,13 +26,13 @@ func (s *Server) handleFolderStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !allowed {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "目录不在扫描范围内"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "目录不在扫描范围内"})
 		return
 	}
 	files, bytes, err := s.st.PathStats(r.Context(), p)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"path": p, "files": files, "bytes": bytes})
+	writeJSON(w, 200, folderStatsResponse{Path: p, Files: files, Bytes: bytes})
 }

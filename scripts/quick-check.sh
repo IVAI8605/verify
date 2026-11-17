@@ -73,6 +73,48 @@ else
 	fi
 fi
 
+echo "[前端类型]"
+# v3.27 类型层：tsc --noEmit 只做类型检查，不产出运行时代码，产物仍是原生 JS。
+# 目的是让「后端改了响应字段名 → 前端还在用旧字段」在提交前就被发现，
+# 而不是等运行时被 `|| []` 静默兜底成空列表。
+#
+# TS2339（属性不存在于 HTMLElement/Element）当前是已知噪音：
+# 前端大量用 el.value / el.checked / el.offsetHeight 这类 DOM 属性，
+# 但 getElementById 的返回类型没有收窄到具体元素类型。
+# 这类错误不阻断，但其余类型错误（字段拼错、对象字面量重复键、参数类型不符）必须阻断。
+if ! command -v node >/dev/null 2>&1; then
+	echo "  SKIP  未找到 node，前端类型未检查"
+elif [ ! -x node_modules/.bin/tsc ]; then
+	echo "  SKIP  未安装 TypeScript（npm install），前端类型未检查"
+else
+	ts_out=$(node_modules/.bin/tsc --noEmit 2>&1)
+	ts_bad=$(printf '%s\n' "$ts_out" | grep -E "error TS" | grep -vE "error TS2339" || true)
+	if [ -z "$ts_bad" ]; then
+		ok "tsc --noEmit 通过（除已知 DOM 噪音 TS2339 外无类型错误）"
+	else
+		bad "tsc --noEmit 失败："
+		printf '%s\n' "$ts_bad" | head -15
+	fi
+fi
+
+echo "[类型契约同步]"
+# v4.0.0：前端类型声明由 tools/gen_types.py 从 Go 的 json tag 生成。
+# 后端改了响应字段却忘了重新生成前端类型 → 这里报错。
+# 出现不一致时运行：python3 tools/gen_types.py
+if ! command -v python3 >/dev/null 2>&1; then
+	echo "  SKIP  未找到 python3，类型契约同步未检查"
+elif [ ! -f tools/gen_types.py ]; then
+	echo "  SKIP  未找到 tools/gen_types.py"
+else
+	if python3 tools/gen_types.py --check >/tmp/verify-gen-types.log 2>&1; then
+		ok "webtypes/types.d.ts 与后端响应契约一致"
+	else
+		bad "webtypes/types.d.ts 与后端响应契约不一致："
+		head -3 /tmp/verify-gen-types.log
+		echo "        修复：python3 tools/gen_types.py"
+	fi
+fi
+
 echo "[单元测试]"
 pkgs=()
 if [ "${1:-}" = "--all" ]; then

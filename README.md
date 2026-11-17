@@ -127,7 +127,7 @@ ffmpeg -hide_banner -encoders | grep qsv
 
 ## 版本
 
-完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v3.26.1** —— 与 v3.26.0 功能一致，仅修复 CI lint（gosec G115）。上一版（v3.26.0）新增只读隔离区清单 `GET /api/trash/list` 与进程指标 `GET /api/metrics`，分组分页 `page_size` 上限放宽到 1000，并把 AGENTS.md 的 `?token=` 契约对齐实现。
+完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v4.0.0** —— 响应契约全面重构：internal/web 下 501 处 `map[string]any` 响应全部改为具名 struct（字段名有编译期保障），前端类型声明由 `tools/gen_types.py` 从 Go 的 json tag 自动生成，新增前端类型检查门禁。零构建部署形态不变（产物仍是原生 JS、go:embed 内嵌、无 CDN、无运行时依赖），所有接口的 JSON 键集合与取值语义均未改变。上一版（v3.27.0）新增前端类型层试点，分组类接口的响应改为具名 struct 并补了契约测试。
 
 ## 维护者 / Maintainer
 
@@ -175,8 +175,25 @@ IVAI8605。
 ├── packaging/fpk/          # 飞牛 fpk 打包目录
 ├── scripts/                # 构建与自检脚本
 ├── docs/                   # 开发速查（docs/README.md）+ 对外方案文档
+├── webtypes/               # 前端 TypeScript 类型声明（types.d.ts 自动生成，frontend.d.ts 手写）
+├── tools/                  # 重构辅助工具（类型生成、契约比对、响应回归）
 ├── cache/                  # 本地草稿、验证单与测试证据（不纳入 git）
 └── dist/                   # 构建产物，只留最近 2–3 个；历史发布包不在仓库内
+```
+
+### 前端类型层
+
+`tsc --noEmit` 只做类型检查，**不产出任何运行时代码**：产物仍是 `internal/web/ui/*.js` 原生脚本，
+由 `go:embed` 内嵌，无 CDN、无运行时依赖。
+
+- `webtypes/types.d.ts` —— **自动生成**，源头是 `internal/web/contracts*.go` 里 struct 的 json tag。
+  改后端响应字段后运行 `python3 tools/gen_types.py` 重新生成，不要手改。
+- `webtypes/frontend.d.ts` —— 前端自己需要的类型（如表格列定义），手写。
+
+```bash
+npm install            # 装 typescript（唯一的 devDependency）
+python3 tools/gen_types.py      # 重新生成前端类型
+bash scripts/quick-check.sh     # 门禁里会校验类型与后端契约是否同步
 ```
 
 ## 许可证

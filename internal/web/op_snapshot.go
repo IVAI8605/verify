@@ -23,8 +23,8 @@ func (s *Server) handleUnfinishedOpSnapshots(w http.ResponseWriter, r *http.Requ
 	runs, err := s.e.ReconcileUnfinishedSnapshots(ctx, 5, 2000)
 	if err != nil {
 		applog.Warn("读取未完成快照失败：%v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "读取未完成快照失败（" + err.Error() + "）"})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "读取未完成快照失败（" + err.Error() + "）"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
+	writeJSON(w, http.StatusOK, runsResponse{Runs: runs})
 }

@@ -53,67 +53,67 @@ func (s *Server) handleCleanupPlans(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		plans, err := s.st.ListCleanupPlans(r.Context())
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"plans": plans})
+		writeJSON(w, 200, cleanupPlansResponse{Plans: plans})
 	case http.MethodPost:
 		var p store.CleanupPlan
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-			writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+			writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 			return
 		}
 		if msg := validateCleanupPlan(&p); msg != "" {
-			writeJSON(w, 400, map[string]any{"error": msg})
+			writeJSON(w, 400, errorResponse{Error: msg})
 			return
 		}
 		if err := s.st.SaveCleanupPlan(r.Context(), &p); err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"plan": p})
+		writeJSON(w, 200, cleanupPlanResponse{Plan: p})
 	default:
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 	}
 }
 
 // handleCleanupDelete 删除计划。POST /api/cleanup/plans/delete {"id":N}
 func (s *Server) handleCleanupDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
 		ID int64 `json:"id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID <= 0 {
-		writeJSON(w, 400, map[string]any{"error": "id 无效"})
+		writeJSON(w, 400, errorResponse{Error: "id 无效"})
 		return
 	}
 	if err := s.st.DeleteCleanupPlan(r.Context(), body.ID); err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true})
+	writeJSON(w, 200, okResponse{OK: true})
 }
 
 // handleCleanupRun 立即执行一条计划（手动触发，不受 enabled 限制）。
 // POST /api/cleanup/run {"id":N}
 func (s *Server) handleCleanupRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
 		ID int64 `json:"id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID <= 0 {
-		writeJSON(w, 400, map[string]any{"error": "id 无效"})
+		writeJSON(w, 400, errorResponse{Error: "id 无效"})
 		return
 	}
 	res, err := s.e.RunCleanupPlan(r.Context(), body.ID)
 	if err != nil {
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
 	writeJSON(w, 200, res)

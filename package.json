@@ -1,0 +1,19 @@
+{
+  "name": "verify",
+  "version": "4.0.0",
+  "private": true,
+  "description": "飞牛 NAS 上的重复文件清理与实时查重工具。前端类型层：tsc --noEmit 只做类型检查，不产出运行时代码，产物仍是原生 JS。",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IVAI8605/verify.git"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "gen-types": "python3 tools/gen_types.py",
+    "check-types-sync": "python3 tools/gen_types.py --check"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

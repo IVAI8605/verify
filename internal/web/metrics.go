@@ -35,7 +35,7 @@ type processMetrics struct {
 // handleMetrics 返回进程资源指标（v3.26.0 F3）：只读，不写日志、不落库、不碰业务数据。
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	writeJSON(w, http.StatusOK, collectProcessMetrics())

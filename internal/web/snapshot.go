@@ -626,41 +626,41 @@ func readMemTotalMB() int {
 
 func (s *Server) handleRuleSearchRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	snap, err := s.snap.start()
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "id": snap.ID})
+	writeJSON(w, 200, snapshotSavedResponse{OK: true, ID: snap.ID})
 }
 
 func (s *Server) handleRuleSearchCancel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	s.snap.cancelCurrent()
-	writeJSON(w, 200, map[string]any{"ok": true})
+	writeJSON(w, 200, okResponse{OK: true})
 }
 
 func (s *Server) handleRuleSearchStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	cur := s.snap.current()
 	if cur == nil {
-		writeJSON(w, 200, map[string]any{"state": "none", "totals": rules.Totals{ByKind: map[string]int64{}}})
+		writeJSON(w, 200, snapshotEmptyResponse{State: "none", Totals: rules.Totals{ByKind: map[string]int64{}}})
 		return
 	}
 	cur.mu.RLock()
 	stale := cur.State == "ready" && cur.DataVersion != s.st.DataVersion()
-	body := map[string]any{
-		"id": cur.ID, "state": cur.State, "error": cur.Error, "stale": stale,
-		"loaded": cur.Loaded, "total": cur.Total, "totals": cur.Totals, "created_at": cur.CreatedAt,
+	body := ruleSearchStatusResponse{
+		ID: cur.ID, State: cur.State, Error: cur.Error, Stale: stale,
+		Loaded: cur.Loaded, Total: cur.Total, Totals: cur.Totals, CreatedAt: cur.CreatedAt,
 	}
 	cur.mu.RUnlock()
 	writeJSON(w, 200, body)
@@ -668,15 +668,15 @@ func (s *Server) handleRuleSearchStatus(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleRuleSearchResults(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	cur := s.snap.current()
 	if cur == nil {
 		// 启动后还没跑过搜索（或规则变更后快照被 invalidate）时 current() 返回 nil，
 		// 直接 RLock 会空指针崩溃、连接被断开。与 status/export 的未就绪语义保持一致。
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"error": "搜索结果未就绪", "state": "none", "detail": "还没有搜索结果，请先搜索",
+		writeJSON(w, http.StatusConflict, searchNotReadyResponse{
+			Error: "搜索结果未就绪", State: "none", Detail: "还没有搜索结果，请先搜索",
 		})
 		return
 	}
@@ -684,7 +684,7 @@ func (s *Server) handleRuleSearchResults(w http.ResponseWriter, r *http.Request)
 	if cur.State != "ready" {
 		state, msg := cur.State, cur.Error
 		cur.mu.RUnlock()
-		writeJSON(w, 409, map[string]any{"error": "搜索结果未就绪", "state": state, "detail": msg})
+		writeJSON(w, 409, searchNotReadyResponse{Error: "搜索结果未就绪", State: state, Detail: msg})
 		return
 	}
 	groups := cur.groups
@@ -724,12 +724,7 @@ func (s *Server) handleRuleSearchResults(w http.ResponseWriter, r *http.Request)
 	if end > len(filtered) {
 		end = len(filtered)
 	}
-	writeJSON(w, 200, map[string]any{
-		"groups": filtered[start:end], "total": len(filtered), "page": page, "page_size": pageSize,
-		// v3.11.0：明确告诉前端还有没有下一页，不要让前端用 length < total 猜
-		// （末页恰好取满时那个判断会误判为还有数据）。
-		"has_more": page*pageSize < len(filtered),
-	})
+	writeJSON(w, 200, snapshotGroupsResponse{Groups: filtered[start:end], Total: len(filtered), Page: page, PageSize: pageSize, HasMore: page*pageSize < len(filtered)})
 }
 
 // handleRuleSearchFacets GET /api/rule-search/facets?type=&dir=&q= —
@@ -742,13 +737,13 @@ func (s *Server) handleRuleSearchResults(w http.ResponseWriter, r *http.Request)
 // 计算只遍历内存快照，不查库。
 func (s *Server) handleRuleSearchFacets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	cur := s.snap.current()
 	if cur == nil {
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"error": "搜索结果未就绪", "state": "none", "detail": "还没有搜索结果，请先搜索",
+		writeJSON(w, http.StatusConflict, searchNotReadyResponse{
+			Error: "搜索结果未就绪", State: "none", Detail: "还没有搜索结果，请先搜索",
 		})
 		return
 	}
@@ -756,7 +751,7 @@ func (s *Server) handleRuleSearchFacets(w http.ResponseWriter, r *http.Request) 
 	if cur.State != "ready" {
 		state, msg := cur.State, cur.Error
 		cur.mu.RUnlock()
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "搜索结果未就绪", "state": state, "detail": msg})
+		writeJSON(w, http.StatusConflict, searchNotReadyResponse{Error: "搜索结果未就绪", State: state, Detail: msg})
 		return
 	}
 	groups := cur.groups
@@ -830,18 +825,18 @@ func (s *Server) handleRuleSearchFacets(w http.ResponseWriter, r *http.Request) 
 		}
 		return dirs[i].Dir < dirs[j].Dir
 	})
-	writeJSON(w, 200, map[string]any{"total": total, "types": types, "dirs": dirs})
+	writeJSON(w, 200, snapshotFacetsResponse{Total: total, Types: types, Dirs: dirs})
 }
 
 func (s *Server) handleRuleSearchExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// 导出只走快照组，避免重新查库导致内容与界面不一致（v3.9.10 起直接产出 CSV）。
 	cur := s.snap.current()
 	if cur == nil {
-		writeJSON(w, 409, map[string]any{"error": "还没有搜索结果，请先搜索"})
+		writeJSON(w, 409, errorResponse{Error: "还没有搜索结果，请先搜索"})
 		return
 	}
 	cur.mu.RLock()
@@ -849,7 +844,7 @@ func (s *Server) handleRuleSearchExport(w http.ResponseWriter, r *http.Request) 
 	state := cur.State
 	cur.mu.RUnlock()
 	if state != "ready" {
-		writeJSON(w, 409, map[string]any{"error": "搜索结果未就绪"})
+		writeJSON(w, 409, errorResponse{Error: "搜索结果未就绪"})
 		return
 	}
 	// 复用结果页同一套筛选与排序，保证下载内容与当前界面所见一致。

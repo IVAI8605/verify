@@ -56,10 +56,10 @@ var errUnsupportedReportMode = errors.New("该页面暂不支持导出报告，�
 // writeCollectError 把分组收集错误映射成响应：模式非法是调用方问题（400），其余按服务端错误（500）。
 func writeCollectError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errUnsupportedReportMode) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+	writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 }
 
 // filterGroupsBySize 按大小上下限裁剪视频类分组的成员并重算组统计。
@@ -171,7 +171,7 @@ func (s *Server) collectGroups(ctx context.Context, mode string, q store.GroupQu
 
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
@@ -187,7 +187,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		N       int      `json:"n"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if body.Mode == "" {

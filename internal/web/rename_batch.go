@@ -118,20 +118,20 @@ func validateRenameDigits(req renameReq) string {
 // handleRenamePreview POST /api/rename/preview — dry-run 返回每个文件的新名（v2.10.0）。
 func (s *Server) handleRenamePreview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var req renameReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if len(req.Files) == 0 {
-		writeJSON(w, 400, map[string]any{"error": "没有要改名的文件"})
+		writeJSON(w, 400, errorResponse{Error: "没有要改名的文件"})
 		return
 	}
 	if msg := validateRenameDigits(req); msg != "" {
-		writeJSON(w, 400, map[string]any{"error": msg})
+		writeJSON(w, 400, errorResponse{Error: msg})
 		return
 	}
 	// v3.5.0：带 methods 时走规则引擎的 dry-run（纯字符串计算，不落盘）。
@@ -145,7 +145,7 @@ func (s *Server) handleRenamePreview(w http.ResponseWriter, r *http.Request) {
 		for _, p := range plan {
 			items = append(items, store.RenameBatchItem{Path: p.OldPath, Orig: p.OldName, Target: p.NewName, NewPath: p.NewPath, Error: p.Error})
 		}
-		writeJSON(w, 200, map[string]any{"items": items, "count": len(items), "plan": plan})
+		writeJSON(w, 200, renamePlanItemsWithPlanResponse{Items: items, Count: len(items), Plan: plan})
 		return
 	}
 	items := make([]store.RenameBatchItem, 0, len(req.Files))
@@ -157,26 +157,26 @@ func (s *Server) handleRenamePreview(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, store.RenameBatchItem{Path: f.Path, Orig: orig, Target: target})
 	}
-	writeJSON(w, 200, map[string]any{"items": items, "count": len(items)})
+	writeJSON(w, 200, renamePlanItemsResponse{Items: items, Count: len(items)})
 }
 
 // handleRenameExecute POST /api/rename/execute — 执行清单式改名，返回 batch_id（v2.10.0）。
 func (s *Server) handleRenameExecute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var req renameReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if len(req.Files) == 0 {
-		writeJSON(w, 400, map[string]any{"error": "没有要改名的文件"})
+		writeJSON(w, 400, errorResponse{Error: "没有要改名的文件"})
 		return
 	}
 	if msg := validateRenameDigits(req); msg != "" {
-		writeJSON(w, 400, map[string]any{"error": msg})
+		writeJSON(w, 400, errorResponse{Error: msg})
 		return
 	}
 	if s.scanBusy(w) {
@@ -191,7 +191,7 @@ func (s *Server) handleRenameExecute(w http.ResponseWriter, r *http.Request) {
 		plan := s.e.BuildRenamePlan(r.Context(), paths, req.Methods)
 		res, err := s.e.ExecuteRenamePlan(r.Context(), plan, req.Methods, req.PresetID)
 		if err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
 		writeJSON(w, 200, res)
@@ -240,10 +240,10 @@ func (s *Server) handleRenameExecute(w http.ResponseWriter, r *http.Request) {
 	}
 	batchID, err := s.st.CreateRenameBatch(r.Context(), string(raw), status)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": "保存改名批失败：" + err.Error()})
+		writeJSON(w, 500, errorResponse{Error: "保存改名批失败：" + err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"batch_id": batchID, "done": done, "failed": failed, "items": items, "reconcile": s.e.FinishOpSnapshot(snap)})
+	writeJSON(w, 200, renameExecResult{BatchID: batchID, Done: done, Failed: failed, Items: items, Reconcile: s.e.FinishOpSnapshot(snap)})
 }
 
 // handleUnfinishedRenameBatches GET /api/rename/batches/unfinished —
@@ -256,14 +256,14 @@ func (s *Server) handleRenameExecute(w http.ResponseWriter, r *http.Request) {
 // 只读查询；用户确认后仍走现有 POST /api/rename/undo/{id} 撤销，本接口不动任何文件。
 func (s *Server) handleUnfinishedRenameBatches(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	all, err := s.st.ListUnfinishedRenameBatches(ctx, 40, true)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": "读取未完成改名批次失败：" + err.Error()})
+		writeJSON(w, 500, errorResponse{Error: "读取未完成改名批次失败：" + err.Error()})
 		return
 	}
 	batches := make([]store.RunningRenameBatch, 0, len(all))
@@ -275,13 +275,13 @@ func (s *Server) handleUnfinishedRenameBatches(w http.ResponseWriter, r *http.Re
 			residual = append(residual, b)
 		}
 	}
-	writeJSON(w, 200, map[string]any{"batches": batches, "residual": residual})
+	writeJSON(w, 200, renameBatchesResidualResponse{Batches: batches, Residual: residual})
 }
 
 // handleRenameUndo POST /api/rename/undo/{batch_id} — 按批撤销（v2.10.0）。
 func (s *Server) handleRenameUndo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// v3.10.8（P1-1）：按批撤销改名与扫描并发会让索引与磁盘错位
@@ -290,13 +290,13 @@ func (s *Server) handleRenameUndo(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, "/api/rename/undo/"), 10, 64)
 	if err != nil || id <= 0 {
-		writeJSON(w, 400, map[string]any{"error": "缺少或非法的 batch_id"})
+		writeJSON(w, 400, errorResponse{Error: "缺少或非法的 batch_id"})
 		return
 	}
 	done, failed, status, failures, uerr := s.e.UndoRenameBatch(r.Context(), id)
 	if uerr != nil {
-		writeJSON(w, 404, map[string]any{"error": uerr.Error()})
+		writeJSON(w, 404, errorResponse{Error: uerr.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "done": done, "failed": failed, "status": status, "items": failures})
+	writeJSON(w, 200, renameExecStatusResult{OK: true, Done: done, Failed: failed, Status: status, Items: failures})
 }

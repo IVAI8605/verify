@@ -71,7 +71,7 @@ async function ensureAssistGroups(){
           if (filters.q) params.set('q', filters.q);
           url = '/api/groups?' + params.toString();
         }
-        const r = await api(url);
+        const r = /** @type {GroupsResp} */ (await api(url));
         const list = r.groups || [];
         out.push(...list); total = Number(r.total || 0);
         if (out.length >= total || !list.length || out.length >= ASSIST_MAX_GROUPS) break;
@@ -453,7 +453,7 @@ async function ensureIntroStats(force){
   if (!force && S.introStatsAt && now - S.introStatsAt < 30000) return;
   try {
     const n = Math.min(300, Math.max(1, Number(S.introN || 10)));
-    const r = await api('/api/groups/intro?n=' + n + '&page=1&page_size=1');
+    const r = /** @type {GroupsResp} */ (await api('/api/groups/intro?n=' + n + '&page=1&page_size=1'));
     S.introAnalyzed = Number(r.analyzed || 0);
     S.introPending = Number(r.pending || 0);
     S.introStatsAt = Date.now();
@@ -467,7 +467,7 @@ async function ensureIntroStats(force){
 async function loadRuleResults(reset){
   const rs = ruleSearchState();
   try {
-    const st = await api('/api/rule-search/status');
+    const st = /** @type {RuleSearchStatusResp} */ (await api('/api/rule-search/status'));
     Object.assign(rs, st || {});
     if (st.state === 'none') { renderRuleSearchProgress({ state:'none' }); await startRuleSearch(); return; }
     if (st.state === 'building') { renderRuleSearchProgress(st); scheduleRulePoll(); return; }
@@ -509,7 +509,7 @@ function scheduleRulePoll(){
   // 页面隐藏时停手。构建阶段后端在跑全库比对，前端没必要死守 1 秒一次。
   rulePoll = startAdaptivePoll(async () => {
     const rs = ruleSearchState();
-    const st = await api('/api/rule-search/status');
+    const st = /** @type {RuleSearchStatusResp} */ (await api('/api/rule-search/status'));
     Object.assign(rs, st || {});
     if (st.state === 'ready') {
       rulePoll = null;
@@ -1547,7 +1547,7 @@ function unfinDismiss(id){
 
 async function loadUnfinishedBatches(){
   try {
-    const r = await api('/api/rename/batches/unfinished');
+    const r = /** @type {RenameBatchesResidualResp} */ (await api('/api/rename/batches/unfinished'));
     S.unfinished = (Array.isArray(r.batches) ? r.batches : []).map(normUnfinishedBatch);
     // v3.10.13：residual 来自后端，刷新后也能看到撤销没干净的批次；
     // 本地残项作为兜底（老包没有 residual 时仍能显示本次会话内刚失败的撤销），按 batch_id 去重。
@@ -1624,7 +1624,7 @@ function pausedRef(){ return !!(S.status && S.status.paused); }
 async function loadTrash(){
   S.loading = true; renderTrash();
   try {
-    const r = await api('/api/trash?limit=200');
+    const r = /** @type {TrashListResp} */ (await api('/api/trash?limit=200'));
     S.trash = r.items || [];
     S.trashTotal = (typeof r.total === 'number') ? r.total : S.trash.length;
     S.trashCursor = r.next_cursor || '';
@@ -2344,7 +2344,7 @@ async function executeRenameMethods(){
 async function loadRenamePresets(){
   const r = renameState();
   try {
-    const res = await api('/api/rename/presets');
+    const res = /** @type {RenamePresetsResp} */ (await api('/api/rename/presets'));
     r.presets = res.presets || [];
     if (S.tab === 'rename') renderRenamePage();
   } catch(e) { /* 预设加载失败不阻塞页面 */ }
@@ -2381,7 +2381,7 @@ async function deleteRenamePreset(){
   if (!id) { toast('请选择预设', 'err'); return; }
   if (!confirm('删除该预设？')) return;
   try {
-    await api('/api/rename/presets/' + id, { method: 'DELETE' });
+    /** @type {RenamePresetsResp} */ (await api('/api/rename/presets/' + id, { method: 'DELETE' }));
     toast('已删除', 'ok');
     await loadRenamePresets();
   } catch(e) { toast('删除失败：' + (e && e.message || e), 'err'); }
@@ -2681,7 +2681,7 @@ async function loadRecentRenameBatches(){
   const r = renameState();
   if (r.recentLoading) return;
   r.recentLoading = true;
-  try { const res = await api('/api/rename/batches/recent?limit=10'); r.recent = res.batches || []; }
+  try { const res = /** @type {RenameBatchesResp} */ (await api('/api/rename/batches/recent?limit=10')); r.recent = res.batches || []; }
   catch(e) { r.recent = []; }
   finally { r.recentLoading = false; if (S.tab === 'rename') renderRenamePage(); }
 }

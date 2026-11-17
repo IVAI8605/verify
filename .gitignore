@@ -54,3 +54,17 @@ coverage.out
 
 # Go 构建缓存（GOCACHE 已指到项目外共享缓存，见 ~/.config/go/env）
 /go-build/
+
+# ── 前端类型层（v4.0.0）───────────────────────────────────────────
+# TypeScript 只做类型检查（tsc --noEmit），不产出运行时代码；
+# 产物仍是 ui/*.js 原生脚本，由 go:embed 内嵌，零构建部署形态不变。
+# 以下是本地类型检查与依赖，不进版本库。
+node_modules/
+/.gocache-ts/
+
+# Python 工具的字节码缓存（tools/*.py 运行后产生）
+__pycache__/
+*.pyc
+
+# 前端类型声明的临时生成物（正式文件在 webtypes/，是入库的）
+webtypes/*.tmp

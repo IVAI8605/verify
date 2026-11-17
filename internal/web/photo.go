@@ -13,7 +13,7 @@ import (
 // 一次性返回全部分组：组数远小于图片数，量级可控。
 func (s *Server) handlePhotoGroups(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	cfg := s.cfg.Get()
@@ -27,7 +27,7 @@ func (s *Server) handlePhotoGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	groups, total, err := s.st.PhotoGroups(r.Context(), int(threshold))
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
 	if groups == nil {
@@ -35,5 +35,5 @@ func (s *Server) handlePhotoGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	groups = sortGroupsQ(groups, r)
 	groups = s.attachTagsForPage(r, groups)
-	writeJSON(w, 200, map[string]any{"groups": groups, "total": total, "threshold": threshold})
+	writeJSON(w, 200, groupsMediaResponse{Groups: groups, Total: int64(total), Threshold: threshold})
 }

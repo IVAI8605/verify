@@ -416,7 +416,7 @@ func requireGET(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		return true
 	}
-	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+	writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 	return false
 }
 
@@ -517,7 +517,29 @@ func hasRawErrDetail(msg string) bool {
 
 // sanitizeErrorPayload 只改写 {"error": "..."} 形态的失败响应，成功响应原样返回；
 // 其它字段（如扫描冲突时的 n）保持不变，前端逻辑不受影响。
+//
+// v4.0.0：响应体逐步从 map[string]any 换成具名 struct 后，这里要同时认两种形态。
+// 做法是让带 error 字段的响应体实现 errorPayload 接口，
+// 收敛时复制一份并替换 Error 字段——原对象不被修改（避免误改调用方持有的结构）。
 func sanitizeErrorPayload(code int, v any) any {
+	// 形态一：具名 struct（v4.0.0 起的首选）
+	if p, ok := v.(errorPayload); ok {
+		raw := p.errorText()
+		if raw == "" {
+			return v
+		}
+		clean := publicErrorText(raw)
+		if clean == raw {
+			return v
+		}
+		if code >= 500 {
+			// 原文只在服务端留痕，方便按时间对照前端看到的摘要
+			applog.Warn("接口错误已收敛（%d）：%s", code, raw)
+		}
+		cp := p.withError(clean)
+		return cp
+	}
+	// 形态二：map[string]any（尚未改造的接口）
 	m, ok := v.(map[string]any)
 	if !ok {
 		return v

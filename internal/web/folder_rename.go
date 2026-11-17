@@ -46,17 +46,17 @@ func friendlyDecodeError(err error) string {
 // handleFolderRenamePreview 预览：POST /api/folder_rename/preview。
 func (s *Server) handleFolderRenamePreview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body folderRenameBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	preview, err := s.e.FolderRenamePreviewAPI(body.Dir, engine.FolderRenameOptions{PrefixA: body.PrefixA})
 	if err != nil {
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
 	writeJSON(w, 200, preview)
@@ -65,7 +65,7 @@ func (s *Server) handleFolderRenamePreview(w http.ResponseWriter, r *http.Reques
 // handleFolderRename 执行：POST /api/folder_rename。
 func (s *Server) handleFolderRename(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// v3.10.8（P1-1）：扫描进行中改名，收尾会把旧路径写回 active
@@ -74,12 +74,12 @@ func (s *Server) handleFolderRename(w http.ResponseWriter, r *http.Request) {
 	}
 	var body folderRenameBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	preview, err := s.e.FolderRename(r.Context(), body.Dir, engine.FolderRenameOptions{PrefixA: body.PrefixA})
 	if err != nil {
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
 	writeJSON(w, 200, preview)
@@ -88,7 +88,7 @@ func (s *Server) handleFolderRename(w http.ResponseWriter, r *http.Request) {
 // handleFolderRenameUndo 撤销：POST /api/folder_rename/undo {task_id}。
 func (s *Server) handleFolderRenameUndo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// v3.10.8（P1-1）：撤销改名与扫描并发会让索引与磁盘错位
@@ -99,13 +99,13 @@ func (s *Server) handleFolderRenameUndo(w http.ResponseWriter, r *http.Request) 
 		TaskID int64 `json:"task_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	done, failed, err := s.e.UndoFolderRename(r.Context(), body.TaskID)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"done": done, "failed": failed})
+	writeJSON(w, 200, doneFailedResponse{Done: done, Failed: failed})
 }

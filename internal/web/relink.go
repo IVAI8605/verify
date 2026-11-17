@@ -31,16 +31,16 @@ func (r *relinkReq) validate() string {
 // handleRelinkPreview 对硬链接合并做预检（不产生任何变更）。
 func (s *Server) handleRelinkPreview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body relinkReq
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if msg := body.validate(); msg != "" {
-		writeJSON(w, 400, map[string]any{"error": msg})
+		writeJSON(w, 400, errorResponse{Error: msg})
 		return
 	}
 	writeJSON(w, 200, s.e.RelinkPreview(r.Context(), body.Keep, body.Paths))
@@ -49,16 +49,16 @@ func (s *Server) handleRelinkPreview(w http.ResponseWriter, r *http.Request) {
 // handleRelink 执行硬链接合并（设计文档 9.1：os.Link 临时文件 + rename 原子替换）。
 func (s *Server) handleRelink(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body relinkReq
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if msg := body.validate(); msg != "" {
-		writeJSON(w, 400, map[string]any{"error": msg})
+		writeJSON(w, 400, errorResponse{Error: msg})
 		return
 	}
 	// v3.10.9：硬链接合并会替换磁盘上的文件，扫描进行中执行会让索引与磁盘不一致。
@@ -67,7 +67,7 @@ func (s *Server) handleRelink(w http.ResponseWriter, r *http.Request) {
 	}
 	res := s.e.RelinkFiles(r.Context(), body.Keep, body.Paths)
 	if res == nil {
-		writeJSON(w, 500, map[string]any{"error": "执行失败"})
+		writeJSON(w, 500, errorResponse{Error: "执行失败"})
 		return
 	}
 	writeJSON(w, 200, res)

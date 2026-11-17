@@ -54,19 +54,19 @@ func searchQuery(r *http.Request) search.Query {
 // 索引就绪时走内存索引；未就绪或超上限降级时回退 SQL LIKE，并在响应里标注。
 func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	qp := searchQuery(r)
 	if qp.Text == "" {
-		writeJSON(w, 200, map[string]any{"total": 0, "items": []search.Item{}, "ready": s.searchIndex.Ready()})
+		writeJSON(w, 200, searchItemsResponse{Total: 0, Items: []search.Item{}, Ready: s.searchIndex.Ready()})
 		return
 	}
 	// 目录限定必须是受管扫描目录，避免拿搜索接口探测任意路径
 	if qp.Dir != "" {
 		cfg := s.cfg.Get()
 		if !pathUnderRoots(qp.Dir, cfg.Volumes) {
-			writeJSON(w, 400, map[string]any{"error": "目录不在扫描范围内"})
+			writeJSON(w, 400, errorResponse{Error: "目录不在扫描范围内"})
 			return
 		}
 	}
@@ -81,22 +81,19 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 		notice = "索引未就绪或超出内存上限，已回退数据库模糊匹配（仅支持子串）"
 	}
 
-	body := map[string]any{
-		"total":     res.Total,
-		"took_ms":   res.Took.Milliseconds(),
-		"truncated": res.Truncated,
-		"degraded":  res.Degraded || notice != "",
-		"ready":     s.searchIndex.Ready(),
-		"items":     res.Items,
+	writeJSON(w, 200, searchSQLResponse{
+		Total:     res.Total,
+		TookMs:    res.Took.Milliseconds(),
+		Truncated: res.Truncated,
+		Degraded:  res.Degraded || notice != "",
+		Ready:     s.searchIndex.Ready(),
+		Items:     res.Items,
 		// v3.20.0：下一页游标；空串表示已经到底。
-		"next_cursor": res.NextCursor,
+		NextCursor: res.NextCursor,
 		// files 保留旧 /api/search 的字段名，兼容已有脚本调用
-		"files": res.Items,
-	}
-	if notice != "" {
-		body["notice"] = notice
-	}
-	writeJSON(w, 200, body)
+		Files:  res.Items,
+		Notice: notice,
+	})
 }
 
 // searchSQLFallback 在索引不可用时直接查 files 表（只支持子串）。
@@ -177,25 +174,21 @@ func (s *Server) searchSQLFallback(ctx context.Context, qp search.Query) search.
 // handleSearchStatus GET /api/search/status — 索引条目数、构建状态、降级标记。
 func (s *Server) handleSearchStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	st := s.searchIndex.Status()
-	writeJSON(w, 200, map[string]any{
-		"entries":     st.Entries,
-		"built_at":    st.BuiltAt,
-		"building":    st.Building,
-		"degraded":    st.Degraded,
-		"est_bytes":   st.EstBytes,
-		"max_entries": st.MaxEntries,
-		"ready":       s.searchIndex.Ready(),
+	writeJSON(w, 200, searchStatusResponse{
+		Entries: st.Entries, BuiltAt: st.BuiltAt, Building: st.Building,
+		Degraded: st.Degraded, EstBytes: st.EstBytes, MaxEntries: st.MaxEntries,
+		Ready: s.searchIndex.Ready(),
 	})
 }
 
 // handleSearchRebuild POST /api/search/rebuild — 手动重建索引（后台执行）。
 func (s *Server) handleSearchRebuild(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	go func() {
@@ -203,5 +196,5 @@ func (s *Server) handleSearchRebuild(w http.ResponseWriter, r *http.Request) {
 			applog.Warn("文件搜索索引重建失败：%s", err.Error())
 		}
 	}()
-	writeJSON(w, 200, map[string]any{"ok": true})
+	writeJSON(w, 200, okResponse{OK: true})
 }

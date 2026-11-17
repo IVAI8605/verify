@@ -1,0 +1,23 @@
+{
+  "//": "前端类型层（v3.27 试点）：只做类型检查，不产出任何运行时代码。产物仍是 ui/*.js 原生脚本，由 go:embed 内嵌，零构建不变。",
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": []
+  },
+  "include": [
+    "internal/web/ui/**/*.js",
+    "internal/web/ui/**/*.d.ts",
+    "webtypes/**/*.d.ts"
+  ]
+}

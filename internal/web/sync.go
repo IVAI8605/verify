@@ -35,7 +35,7 @@ func localMachineName() string {
 // handleSyncExport 导出本机指纹包：GET /api/sync/export。
 func (s *Server) handleSyncExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	machine := localMachineName()
@@ -79,7 +79,7 @@ func sanitizeFileName(v string) string {
 // handleSyncImport 导入另一台机器的指纹包：POST /api/sync/import。
 func (s *Server) handleSyncImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var pkg struct {
@@ -88,20 +88,20 @@ func (s *Server) handleSyncImport(w http.ResponseWriter, r *http.Request) {
 		Rows    []store.PeerFile `json:"rows"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 96<<20)).Decode(&pkg); err != nil {
-		writeJSON(w, 400, map[string]any{"error": "指纹包解析失败：" + err.Error()})
+		writeJSON(w, 400, errorResponse{Error: "指纹包解析失败：" + err.Error()})
 		return
 	}
 	if pkg.Version != 0 && pkg.Version != store.PeerPackageVersion {
-		writeJSON(w, 400, map[string]any{"error": fmt.Sprintf("不支持的指纹包版本：%d", pkg.Version)})
+		writeJSON(w, 400, errorResponse{Error: fmt.Sprintf("不支持的指纹包版本：%d", pkg.Version)})
 		return
 	}
 	pkg.Machine = strings.TrimSpace(pkg.Machine)
 	if err := store.ValidatePeerMachine(pkg.Machine); err != nil {
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
 	if len(pkg.Rows) > 1_000_000 {
-		writeJSON(w, 400, map[string]any{"error": "指纹包行数超过 100 万"})
+		writeJSON(w, 400, errorResponse{Error: "指纹包行数超过 100 万"})
 		return
 	}
 	valid := make([]store.PeerFile, 0, len(pkg.Rows))
@@ -115,11 +115,11 @@ func (s *Server) handleSyncImport(w http.ResponseWriter, r *http.Request) {
 		valid = append(valid, row)
 	}
 	if err := s.st.SavePeerPackage(r.Context(), pkg.Machine, valid); err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
 	s.invalidatePeerIndex()
-	writeJSON(w, 200, map[string]any{"imported": len(valid), "invalid": invalid, "machine": pkg.Machine})
+	writeJSON(w, 200, syncImportResponse{Imported: len(valid), Invalid: invalid, Machine: pkg.Machine})
 }
 
 // handleSyncPeers 查看/删除已导入的机器：GET / DELETE /api/sync/peers?machine=。
@@ -128,24 +128,24 @@ func (s *Server) handleSyncPeers(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		items, err := s.st.ListSyncPeers(r.Context())
 		if err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"peers": items, "machine": localMachineName()})
+		writeJSON(w, 200, syncPeersResponse{Peers: items, Machine: localMachineName()})
 	case http.MethodDelete:
 		machine := strings.TrimSpace(r.URL.Query().Get("machine"))
 		if machine == "" {
-			writeJSON(w, 400, map[string]any{"error": "machine 参数不能为空"})
+			writeJSON(w, 400, errorResponse{Error: "machine 参数不能为空"})
 			return
 		}
 		if err := s.st.DeleteSyncPeer(r.Context(), machine); err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
 		s.invalidatePeerIndex()
-		writeJSON(w, 200, map[string]any{"ok": true})
+		writeJSON(w, 200, okResponse{OK: true})
 	default:
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 	}
 }
 

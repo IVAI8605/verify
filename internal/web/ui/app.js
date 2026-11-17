@@ -122,7 +122,6 @@ const S = {
     {key:'depth', dir:'min', on:false},
     {key:'name', dir:'max', on:false}
   ],
-  keepPaths: [],
   trash: [],
   trashSel: new Set(),
   videoFails: [],
@@ -1421,6 +1420,12 @@ $('stopBtn').addEventListener('click', async () => {
 let prevRunning = false;
 
 const _refreshStatusOrig = refreshStatus;
+// @ts-ignore —— TS2630：refreshStatus 是函数声明，绑定不可重新赋值。
+// 这里是有意的 monkey-patch：helper.js 定义原函数，本文件在脚本末尾包一层，
+// 补「自动完成提示」与「扫描完成后自动进入搜索阶段」两段逻辑。
+// 加载顺序由 index.html 的 <script defer> 保证：helper.js 先执行、app.js 后执行，
+// 所以重赋值一定发生在定义之后。改成 var 会牵动所有引用点，风险大于收益。
+// 已知技术债：若将来引入模块化前端，这里应改成显式的中间层而不是猴补。
 refreshStatus = async function(){
   const wasRunning = prevRunning;
   const st = await _refreshStatusOrig.apply(this, arguments);

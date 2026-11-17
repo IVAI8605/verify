@@ -174,27 +174,27 @@ func (s *Server) resolveSelectionPaths(ctx context.Context, token string, exclud
 // 只回总数，不回路径；路径由 /api/search/selection/items 分批取。
 func (s *Server) handleSearchSelection(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body searchSelectionBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "请求格式错误"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求格式错误"})
 		return
 	}
 	q := body.query()
 	if q.Text == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "关键词为空"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "关键词为空"})
 		return
 	}
 	if q.Dir != "" && !pathUnderRoots(q.Dir, s.cfg.Get().Volumes) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "目录不在扫描范围内"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "目录不在扫描范围内"})
 		return
 	}
 	s.searchIndex.RebuildIfStale(r.Context(), s.st.DB())
 	if !s.searchIndex.Ready() {
 		// 降级模式下没有稳定结果集，全选凭据无从谈起，让前端退回「只选已加载页」。
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "索引未就绪，暂不支持全选全部结果"})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: "索引未就绪，暂不支持全选全部结果"})
 		return
 	}
 	q.CountOnly = true
@@ -203,37 +203,32 @@ func (s *Server) handleSearchSelection(w http.ResponseWriter, r *http.Request) {
 	dataVer := s.st.DataVersion()
 	token := s.searchSel.put(q, res.Total, builtAt, dataVer)
 	if token == "" {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "生成选择凭据失败"})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "生成选择凭据失败"})
 		return
 	}
-	writeJSON(w, 200, map[string]any{
-		"token":          token,
-		"count":          res.Total,
-		"index_built_at": builtAt,
-		"data_version":   dataVer,
-	})
+	writeJSON(w, 200, searchSelectionResponse{Token: token, Count: res.Total, IndexBuiltAt: builtAt, DataVersion: dataVer})
 }
 
 // handleSearchSelectionItems POST /api/search/selection/items — 按凭据分批取路径（v3.20.0）。
 // excludes 是「全选后逐条取消」的少数路径，服务端在过滤阶段剔除，总数与之保持同一口径。
 func (s *Server) handleSearchSelectionItems(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body searchSelectionBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "请求格式错误"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求格式错误"})
 		return
 	}
 	sel, ok := s.searchSel.get(strings.TrimSpace(body.Token))
 	if !ok {
-		writeJSON(w, http.StatusGone, map[string]any{"error": "选择已过期，请重新全选"})
+		writeJSON(w, http.StatusGone, errorResponse{Error: "选择已过期，请重新全选"})
 		return
 	}
 	// 索引重建或数据变化后，旧凭据指向的结果集已经不是用户看到的那一批。
 	if sel.builtAt != s.searchIndex.Status().BuiltAt || sel.dataVer != s.st.DataVersion() || !s.searchIndex.Ready() {
-		writeJSON(w, http.StatusGone, map[string]any{"error": "结果已变化，请重新全选"})
+		writeJSON(w, http.StatusGone, errorResponse{Error: "结果已变化，请重新全选"})
 		return
 	}
 	q := sel.q
@@ -260,10 +255,5 @@ func (s *Server) handleSearchSelectionItems(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	res := s.searchIndex.Query(q)
-	writeJSON(w, 200, map[string]any{
-		"total":       res.Total,
-		"items":       res.Items,
-		"next_offset": q.Offset + len(res.Items),
-		"took_ms":     res.Took.Milliseconds(),
-	})
+	writeJSON(w, 200, searchResultsResponse{Total: res.Total, Items: res.Items, NextOffset: q.Offset + len(res.Items), TookMs: res.Took.Milliseconds()})
 }

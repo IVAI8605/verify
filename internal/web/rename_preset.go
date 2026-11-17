@@ -22,27 +22,27 @@ func (s *Server) handleRenamePresets(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		list, err := s.st.ListRenamePresets(r.Context())
 		if err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"presets": list})
+		writeJSON(w, 200, renamePresetsResponse{Presets: list})
 	case http.MethodPost:
 		var p store.RenamePreset
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&p); err != nil {
-			writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+			writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 			return
 		}
 		if msg := validateRenamePreset(&p); msg != "" {
-			writeJSON(w, 400, map[string]any{"error": msg})
+			writeJSON(w, 400, errorResponse{Error: msg})
 			return
 		}
 		if err := s.st.SaveRenamePreset(r.Context(), &p); err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"preset": p})
+		writeJSON(w, 200, renamePresetResponse{Preset: p})
 	default:
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 	}
 }
 
@@ -50,34 +50,34 @@ func (s *Server) handleRenamePresets(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRenamePresetByID(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, "/api/rename/presets/"), 10, 64)
 	if err != nil || id <= 0 {
-		writeJSON(w, 400, map[string]any{"error": "缺少或非法的预设 id"})
+		writeJSON(w, 400, errorResponse{Error: "缺少或非法的预设 id"})
 		return
 	}
 	switch r.Method {
 	case http.MethodPut:
 		var p store.RenamePreset
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&p); err != nil {
-			writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+			writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 			return
 		}
 		p.ID = id
 		if msg := validateRenamePreset(&p); msg != "" {
-			writeJSON(w, 400, map[string]any{"error": msg})
+			writeJSON(w, 400, errorResponse{Error: msg})
 			return
 		}
 		if err := s.st.SaveRenamePreset(r.Context(), &p); err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"preset": p})
+		writeJSON(w, 200, renamePresetResponse{Preset: p})
 	case http.MethodDelete:
 		if err := s.st.DeleteRenamePreset(r.Context(), id); err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"ok": true})
+		writeJSON(w, 200, okResponse{OK: true})
 	default:
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 	}
 }
 

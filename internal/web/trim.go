@@ -15,7 +15,7 @@ import (
 // handleTrim 批量剪除片头（v1.16）：POST /api/trim {jobs:[{path,group_key,offset,mode,replace,duration}]}。
 func (s *Server) handleTrim(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// v3.10.8（P1-1）：剪除会生成新文件并隔离原文件，扫描进行中执行会让索引与磁盘错位
@@ -26,11 +26,11 @@ func (s *Server) handleTrim(w http.ResponseWriter, r *http.Request) {
 		Jobs []engine.TrimJob `json:"jobs"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if len(body.Jobs) == 0 {
-		writeJSON(w, 400, map[string]any{"error": "缺少任务"})
+		writeJSON(w, 400, errorResponse{Error: "缺少任务"})
 		return
 	}
 	for i := range body.Jobs {
@@ -46,20 +46,20 @@ func (s *Server) handleTrimLog(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	log, err := s.st.ListTrimLog(r.Context(), limit)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
 	if log == nil {
 		log = []store.TrimLogEntry{}
 	}
-	writeJSON(w, 200, map[string]any{"log": log})
+	writeJSON(w, 200, trimLogResponse{Log: log})
 }
 
 // handleTrimProbe 边界探测（v1.16 引入 16.6）：POST /api/trim/probe {group_key, paths, durations, threshold}。
 // 结果按组缓存，重复打开面板不重算。
 func (s *Server) handleTrimProbe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
@@ -69,15 +69,15 @@ func (s *Server) handleTrimProbe(w http.ResponseWriter, r *http.Request) {
 		Threshold float64   `json:"threshold"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if body.GroupKey == "" || len(body.Paths) < 2 {
-		writeJSON(w, 400, map[string]any{"error": "缺少分组或成员不足"})
+		writeJSON(w, 400, errorResponse{Error: "缺少分组或成员不足"})
 		return
 	}
 	if sec, st, ok := s.st.GetTrimProbe(r.Context(), body.GroupKey); ok && st == "ok" {
-		writeJSON(w, 200, map[string]any{"boundary": sec, "status": st, "cached": true})
+		writeJSON(w, 200, trimProbeResponse{Boundary: sec, Status: st, Cached: true})
 		return
 	}
 	if body.Threshold <= 0 {
@@ -85,5 +85,5 @@ func (s *Server) handleTrimProbe(w http.ResponseWriter, r *http.Request) {
 	}
 	sec, st := s.e.TrimProbeBoundary(r.Context(), body.Paths, body.Durations, body.Threshold)
 	_ = s.st.SaveTrimProbe(r.Context(), body.GroupKey, sec, st)
-	writeJSON(w, 200, map[string]any{"boundary": sec, "status": st, "cached": false})
+	writeJSON(w, 200, trimProbeResponse{Boundary: sec, Status: st, Cached: false})
 }

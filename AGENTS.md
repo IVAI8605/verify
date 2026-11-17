@@ -41,6 +41,27 @@
 - Go 1.26，`CGO_ENABLED=0` 交叉编译到 `linux/amd64`；SQLite 使用纯 Go 的 `modernc.org/sqlite`
 - Web UI 通过 `go:embed ui` 内嵌，**不允许引入 CDN 或运行时前端依赖**；v3.0.0 起 `ui/` 含 `index.html` + 6 个经典脚本（helper/api/settings/view/modal/app）+ `styles.css`，由 `index.html` 按顺序 `<script defer>` 引入
 - 前端零构建是刻意的部署优势；如需拆模块，必须保证产物仍是单文件并由 `go:embed` 引用
+- **v4.0.0 起：响应契约是具名 struct（不改变零构建形态）**。规则：
+  - **所有 `writeJSON` 的响应体都必须是 `internal/web/contracts*.go` 里的具名 struct**，不再用 `map[string]any`。
+    字段名写在 struct 的 json tag 上，编译器能查出来；写在 map 字面量里则只有字面量知道。
+  - **json tag 是前后端字段名的唯一真相源**：改 tag → 跑 `python3 tools/gen_types.py` 重新生成前端类型。
+    `webtypes/types.d.ts` 是**自动生成**的，不要手改（手改会被下次生成覆盖）。
+  - **`omitempty` 是陷阱**：原 map 里显式写出的键，即使值为 0/false/"" 也一定会出现在 JSON 里；
+    struct 的 `omitempty` 会在值为零时把键整个省掉，前端 `out["done"].(float64)` 会 panic。
+    所以：原 map 里无条件写出的键 → struct 里**不要**加 omitempty；
+    原 map 里条件添加的键（值可能为空）→ 才用 omitempty。
+  - **同一个 struct 服务多个键集合不同的接口是不行的**：要么按键集合拆成多个 struct，
+    要么用 omitempty 精确表达「这处不写这个键」。改造时用 `tools/compare_json_keys.py` 核对。
+  - 类型声明放 `webtypes/`，**不得放 `internal/web/ui/`**——`ui/` 整个目录被 `go:embed` 内嵌，放进去会把编译期文件打进二进制（`check-agents-md.sh` 断言位置）
+  - 仍是**零 npm 运行时依赖**：`node_modules/` 只装 `typescript` 一个 devDependency，不进版本库，不进二进制
+  - 前端类型门禁只阻断**真实类型错误**（字段拼错、对象字面量重复键、参数类型不符）；`TS2339`（属性不存在于 HTMLElement/Element）当前是已知噪音，不阻断——因为 `getElementById` 返回类型没有收窄到具体元素类型
+  - **改响应结构后必须跑这两条验证**（它们是「零行为变更」的保证）：
+    ```bash
+    # 1) 逐接口比对 JSON 键集合（与改造前的源码比，需有基准目录）
+    python3 tools/compare_json_keys.py --old <改造前源码目录> --new .
+    # 2) 起新旧两个实例实抓响应对比
+    python3 tools/compare_api.py --old <旧二进制> --new <新二进制>
+    ```
 - 直接依赖 7 个（fsnotify、cpuid、blake3、modernc sqlite、golang.org/x/image、golang.org/x/text——GB18030 解码（v3.12.0 修非 UTF-8 文件名）、go-pinyin——拼音音序键，均纯 Go 无 cgo）。新增依赖前先证明必要
 - 繁简转换**不引入第三方库**：沿用 OpenCC 上游 Apache-2.0 的词典数据（内嵌在 `internal/engine/data/opencc/`，归属见该目录 `NOTICE.md`），前向最大匹配在 `internal/engine/data/` 自实现。原因是原依赖链里的 `github.com/liuzl/cedar-go` 为 GPL-2.0，静态链接会污染本项目的 MIT 分发；替换时用旧实现输出固化了对齐样本（`internal/engine/data/dict_test.go`）
 - 视频分析复用系统 `ffmpeg`/`ffprobe`，不打包静态 FFmpeg

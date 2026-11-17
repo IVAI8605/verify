@@ -44,7 +44,7 @@ import (
 //go:embed ui
 var uiFS embed.FS
 
-const Version = "3.26.1"
+const Version = "4.0.0"
 
 type Server struct {
 	e       *engine.Engine
@@ -179,7 +179,7 @@ func (s *Server) Handler() http.Handler {
 		case http.MethodDelete:
 			s.handleVideoTagsDelete(w, r)
 		default:
-			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+			writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		}
 	}))
 	// v2.7.0：标签值重算与按标签辅助分组
@@ -324,20 +324,20 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 // handleTasksPause / handleTasksResume 任务手动暂停与恢复（v1.21）。
 func (s *Server) handleTasksPause(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	s.e.PauseTasks()
-	writeJSON(w, 200, map[string]any{"ok": true, "paused": true})
+	writeJSON(w, 200, pausedResponse{OK: true, Paused: true})
 }
 
 func (s *Server) handleTasksResume(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	s.e.ResumeTasks()
-	writeJSON(w, 200, map[string]any{"ok": true, "paused": false})
+	writeJSON(w, 200, pausedResponse{OK: true, Paused: false})
 }
 
 // uiAssets 是允许通过 /ui/<name> 访问的内嵌资源白名单。
@@ -463,12 +463,12 @@ func (s *Server) csrfGuard(next http.Handler) http.Handler {
 		if !sameSiteRequest(r) {
 			// v3.17.4（F-21）：403 也留档，写清是跨站来源还是缺请求标记。
 			s.recordDenied(r, "跨站写请求被拒")
-			writeJSON(w, http.StatusForbidden, map[string]any{"error": "跨站写请求已被拒绝"})
+			writeJSON(w, http.StatusForbidden, errorResponse{Error: "跨站写请求已被拒绝"})
 			return
 		}
 		if s.cookieAuthed(r) && r.Header.Get("X-Requested-With") != "verify" {
 			s.recordDenied(r, "写请求缺少 X-Requested-With 标记")
-			writeJSON(w, http.StatusForbidden, map[string]any{"error": "缺少请求标记，跨站写请求已被拒绝"})
+			writeJSON(w, http.StatusForbidden, errorResponse{Error: "缺少请求标记，跨站写请求已被拒绝"})
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -502,7 +502,7 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.authed(r) {
 			s.recordDenied(r, "无有效访问令牌")
-			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "需要访问令牌", "auth": true})
+			writeJSON(w, http.StatusUnauthorized, authErrorResponse{Error: "需要访问令牌", Auth: true})
 			return
 		}
 		if !guardReplacementChars(w, r) {
@@ -572,21 +572,21 @@ func guardReplacementChars(w http.ResponseWriter, r *http.Request) bool {
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "请求体过大，请分批提交"})
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{Error: "请求体过大，请分批提交"})
 			return false
 		}
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "读取请求失败，请重试"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "读取请求失败，请重试"})
 		return false
 	}
 	if len(body) > maxWriteBody {
-		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "请求体过大，请分批提交"})
+		writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{Error: "请求体过大，请分批提交"})
 		return false
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	// 两种形态都要拦：前端 JSON.stringify 输出的是真实 U+FFFD 字节；
 	// 脚本/外部调用可能写成 JSON 转义 \ufffd，此时原始字节里看不到替换字符。
 	if bytes.ContainsRune(body, '\uFFFD') || bytes.Contains(bytes.ToLower(body), []byte(`\ufffd`)) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "路径包含无法识别的文件名字符，请从文件列表重新选择"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "路径包含无法识别的文件名字符，请从文件列表重新选择"})
 		return false
 	}
 	return true
@@ -634,7 +634,7 @@ func (g *fffdGuardReader) Close() error { return g.r.Close() }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// v1.30.1：登录失败限速（按来源 IP，成功后清零）
@@ -643,7 +643,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		ip = r.RemoteAddr
 	}
 	if s.loginThrottleCheck(ip) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "尝试过于频繁，请 5 分钟后再试"})
+		writeJSON(w, http.StatusTooManyRequests, errorResponse{Error: "尝试过于频繁，请 5 分钟后再试"})
 		return
 	}
 	var body struct {
@@ -652,7 +652,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// v3.10.8（SEC-5）：登录体只需一个令牌字段，限制大小防止超大请求体占内存。
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	token := s.cfg.Get().AccessToken
@@ -667,7 +667,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			e.Summary = "登录成功"
 			s.recordOp(r, e)
 		}
-		writeJSON(w, 200, map[string]any{"ok": true})
+		writeJSON(w, 200, okResponse{OK: true})
 		return
 	}
 	s.loginThrottleFail(ip)
@@ -675,14 +675,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	fail.Result = oplog.ResultFail
 	fail.Summary = "访问令牌不正确"
 	s.recordOp(r, fail)
-	writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "访问令牌不正确"})
+	writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "访问令牌不正确"})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// v3.10.8（SEC-7）：登出会清 Cookie 并留痕，只接受 POST；
 	// 之前 GET 也能触发，任意 <img>/链接即可把用户踢下线（同站跨端口更易命中）。
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// 与登录 Cookie 保持一致：同样带上 HttpOnly 与 SameSite，Secure 同因 HTTP 部署不启用。
@@ -692,7 +692,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	e := oplog.New("logout")
 	e.Summary = "退出登录"
 	s.recordOp(r, e)
-	writeJSON(w, 200, map[string]any{"ok": true})
+	writeJSON(w, 200, okResponse{OK: true})
 }
 
 type volInfo struct {
@@ -710,12 +710,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// 原来无论是否登录都返回数据目录、日志路径、ffmpeg 路径与完整配置，
 	// 等于给局域网里未授权的访问者一份内部结构清单；配置本身还有别的接口可读。
 	if !s.authed(r) {
-		out := map[string]any{
-			"version": Version,
-			"auth":    map[string]any{"required": cfg.AccessToken != "", "ok": false},
+		out := statusUnauthResponse{
+			Version: Version,
+			Auth:    map[string]any{"required": cfg.AccessToken != "", "ok": false},
 		}
 		if s.e != nil {
-			out["state"] = s.e.State()
+			out.State = s.e.State()
 		}
 		writeJSON(w, 200, out)
 		return
@@ -752,38 +752,38 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 		vols = append(vols, vi)
 	}
-	writeJSON(w, 200, map[string]any{
-		"state":  s.e.State(),
-		"paused": s.e.Paused(),
+	writeJSON(w, 200, statusResponse{
+		State:  s.e.State(),
+		Paused: s.e.Paused(),
 		// v3.10.8（P2-3）：健康检测是否在跑由状态接口一并下发。
 		// 以前前端只在自己访问过健康页后才知道，其它页面扫描期间仍能点写操作。
-		"health_running": s.e.HealthRunning(),
+		HealthRunning: s.e.HealthRunning(),
 		// v3.12.0：视频/片头/裁剪/转码是否正在使用 ffmpeg。健康探测会等它们结束才开始，
 		// 界面据此在用户点「健康扫描」时给一次二次确认，避免把排队等待当成卡死。
-		"ffmpeg_running": s.e.FFmpegBusy(),
+		FFmpegRunning: s.e.FFmpegBusy(),
 		// v3.18.0：当前占用独占槽的任务（扫描 / 转码 / 健康检测等）。
 		// 顶部状态区据此显示「正在运行：扫描（占用磁盘）」，无需再轮询 /api/tasks。
-		"exclusive_task": exclusiveTaskView(s),
-		"counts":         counts,
-		"volumes":        vols,
-		"version":        Version,
-		"cleanup":        s.cleanupSummary(r.Context()),
-		"auth": map[string]any{
+		ExclusiveTask: exclusiveTaskView(s),
+		Counts:        counts,
+		Volumes:       vols,
+		Version:       Version,
+		Cleanup:       s.cleanupSummary(r.Context()),
+		Auth: map[string]any{
 			"required": cfg.AccessToken != "",
 			"ok":       s.authed(r),
 		},
-		"config": statusConfigView(cfg),
-		"hash": map[string]any{
+		Config: statusConfigView(cfg),
+		Hash: map[string]any{
 			"algo":        hashx.DisplayName,
 			"level":       hashx.Level(),
 			"quick_chunk": hashx.QuickChunk,
 		},
-		"paths": map[string]any{
+		Paths: map[string]any{
 			"data_dir":  s.dataDir,
 			"cache_dir": s.cacheDir(),
 			"log_file":  applog.Path(),
 		},
-		"ffmpeg": map[string]any{
+		FFmpeg: map[string]any{
 			"available":   s.e.RunnerSnapshot().Available(),
 			"ffmpeg":      s.e.RunnerSnapshot().FFmpeg,
 			"ffprobe":     s.e.RunnerSnapshot().FFprobe,
@@ -881,7 +881,7 @@ func isValidHTTPURL(s string) bool {
 
 func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// v3.10.10：必须显式给出扫描模式。此前解码失败被忽略，空 body 或超大 body
@@ -891,7 +891,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		Quick bool   `json:"quick"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "扫描请求需要 JSON 参数：mode 为 full 或 quick"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "扫描请求需要 JSON 参数：mode 为 full 或 quick"})
 		return
 	}
 	var mode engine.ScanMode
@@ -902,29 +902,29 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		mode = engine.ScanModeQuick
 	case "":
 		if !body.Quick {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "扫描请求需要 JSON 参数：mode 为 full 或 quick"})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "扫描请求需要 JSON 参数：mode 为 full 或 quick"})
 			return
 		}
 		mode = engine.ScanModeQuick
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "扫描模式只能是 full 或 quick"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "扫描模式只能是 full 或 quick"})
 		return
 	}
 	if err := s.e.StartScanMode(mode); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "mode": string(mode)})
+	writeJSON(w, 200, modeResponse{OK: true, Mode: string(mode)})
 }
 
 func (s *Server) handleScanStop(w http.ResponseWriter, r *http.Request) {
 	// v3.10.6：停止扫描会让写操作恢复可用，同样只接受 POST，避免跨站 GET 打断扫描。
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "停止扫描仅支持 POST"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "停止扫描仅支持 POST"})
 		return
 	}
 	s.e.StopScan()
-	writeJSON(w, 200, map[string]any{"ok": true})
+	writeJSON(w, 200, okResponse{OK: true})
 }
 
 // boolParam 解析 URL 布尔参数；空值或非法值返回默认值。
@@ -1224,7 +1224,7 @@ func (s *Server) handleGroups(w http.ResponseWriter, r *http.Request) {
 		groups, total, err = s.st.ExactGroups(r.Context(), q)
 	}
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
 	if groups == nil {
@@ -1259,7 +1259,7 @@ func (s *Server) handleGroups(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, 200, map[string]any{"groups": groups, "total": total, "page": q.Page, "page_size": q.PageSize})
+	writeJSON(w, 200, groupsResponse{Groups: groups, Total: int64(total), Page: q.Page, PageSize: q.PageSize})
 }
 
 func (s *Server) handleVideoGroups(w http.ResponseWriter, r *http.Request) {
@@ -1269,7 +1269,7 @@ func (s *Server) handleVideoGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	groups, err := s.e.VideoGroups(r.Context(), false)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
 	cfg := s.cfg.Get()
@@ -1292,7 +1292,7 @@ func (s *Server) handleVideoGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	pageGroups := groups[start:end]
 	pageGroups = s.attachTagsForPage(r, pageGroups)
-	writeJSON(w, 200, map[string]any{"groups": pageGroups, "total": len(groups), "page": page, "page_size": pageSize})
+	writeJSON(w, 200, groupsResponse{Groups: pageGroups, Total: int64(len(groups)), Page: page, PageSize: pageSize})
 }
 
 func (s *Server) handleIntroGroups(w http.ResponseWriter, r *http.Request) {
@@ -1304,7 +1304,7 @@ func (s *Server) handleIntroGroups(w http.ResponseWriter, r *http.Request) {
 	n := int(intParam(r, "n", int64(cfg.IntroSeconds), 1, 300))
 	groups, err := s.e.IntroGroups(r.Context(), n, false)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
 	groups = filterGroupsByRoots(groups, cfg.Volumes)
@@ -1327,15 +1327,12 @@ func (s *Server) handleIntroGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	pageGroups := groups[start:end]
 	pageGroups = s.attachTagsForPage(r, pageGroups)
-	writeJSON(w, 200, map[string]any{
-		"groups": pageGroups, "total": len(groups), "page": page, "page_size": pageSize,
-		"n": n, "analyzed": analyzed, "pending": pending,
-	})
+	writeJSON(w, 200, introGroupsResponse{Groups: pageGroups, Total: len(groups), Page: page, PageSize: pageSize, N: n, Analyzed: analyzed, Pending: pending})
 }
 
 func (s *Server) handleIntroReanalyze(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
@@ -1351,28 +1348,28 @@ func (s *Server) handleIntroReanalyze(w http.ResponseWriter, r *http.Request) {
 		n = 10
 	}
 	if err := s.e.ReanalyzeIntro(r.Context(), n); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "n": n})
+		writeJSON(w, http.StatusConflict, countErrorResponse{Error: err.Error(), N: n})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "n": n})
+	writeJSON(w, 200, nResponse{OK: true, N: n})
 }
 
 func (s *Server) handleVideoFailures(w http.ResponseWriter, r *http.Request) {
 	items, err := s.e.VideoFailures(r.Context())
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
 	items = filterVideoFailuresByRoots(items, s.cfg.Get().Volumes)
 	if items == nil {
 		items = []store.VideoFailure{}
 	}
-	writeJSON(w, 200, map[string]any{"items": items, "total": len(items)})
+	writeJSON(w, 200, itemsTotalResponse{Items: items, Total: len(items)})
 }
 
 func (s *Server) handleVideoReanalyze(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, 405, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, 405, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
@@ -1380,11 +1377,11 @@ func (s *Server) handleVideoReanalyze(w http.ResponseWriter, r *http.Request) {
 		All bool    `json:"all"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if len(body.IDs) == 0 && !body.All {
-		writeJSON(w, 400, map[string]any{"error": "缺少 ids 或 all"})
+		writeJSON(w, 400, errorResponse{Error: "缺少 ids 或 all"})
 		return
 	}
 	ids := body.IDs
@@ -1392,10 +1389,10 @@ func (s *Server) handleVideoReanalyze(w http.ResponseWriter, r *http.Request) {
 		ids = nil
 	}
 	if err := s.e.ReanalyzeVideos(r.Context(), ids); err != nil {
-		writeJSON(w, 409, map[string]any{"error": err.Error()})
+		writeJSON(w, 409, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "count": len(ids)})
+	writeJSON(w, 200, countOKResponse{OK: true, Count: len(ids)})
 }
 
 // scanBusy 在查重扫描进行中直接返回 409，并告知调用方已拒绝本次请求。
@@ -1407,7 +1404,7 @@ func (s *Server) scanBusy(w http.ResponseWriter) bool {
 	if !s.e.State().Running {
 		return false
 	}
-	writeJSON(w, http.StatusConflict, map[string]any{"error": "扫描进行中，请稍后再操作"})
+	writeJSON(w, http.StatusConflict, errorResponse{Error: "扫描进行中，请稍后再操作"})
 	return true
 }
 
@@ -1418,7 +1415,7 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, 405, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, 405, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	if s.scanBusy(w) {
@@ -1430,7 +1427,7 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 		GroupKeys []string `json:"group_keys"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	res, err := s.e.TrashFiles(r.Context(), body.Paths, s.trashGroups(body.GroupKey, body.GroupKeys))
@@ -1438,10 +1435,10 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 		// v3.25.0（P1-1）：被闸门拒绝是「稍后再试」的冲突，不是参数错误。
 		var ce *taskguard.ConflictError
 		if errors.As(err, &ce) {
-			writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+			writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
 	// v3.10.10（第五轮 P1-4）：已移走的条目立刻从结果快照剔除，
@@ -1456,7 +1453,7 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 // 因此可以安全地用于自动化、监控与生产实例探测。旧接口行为保持不变。
 func (s *Server) handleTrashList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, 405, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, 405, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	s.writeTrashPage(w, r, false)
@@ -1472,7 +1469,7 @@ func (s *Server) writeTrashPage(w http.ResponseWriter, r *http.Request, heal boo
 		// 新增的 total / returned / has_more / next_cursor 只是追加字段，老调用方忽略即可。
 		items, err := s.st.ListTrash(r.Context())
 		if err != nil {
-			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
 		if heal {
@@ -1482,17 +1479,14 @@ func (s *Server) writeTrashPage(w http.ResponseWriter, r *http.Request, heal boo
 		if items == nil {
 			items = []store.TrashRow{}
 		}
-		writeJSON(w, 200, map[string]any{
-			"items": items, "total": len(items), "returned": len(items),
-			"has_more": false, "next_cursor": "",
-		})
+		writeJSON(w, 200, trashListResponse{Items: items, Total: len(items), Returned: len(items), HasMore: false, NextCursor: ""})
 		return
 	}
 	limit := store.TrashPageDefault
 	if limitStr != "" {
 		n, err := strconv.Atoi(limitStr)
 		if err != nil || n < 1 || n > store.TrashPageMax {
-			writeJSON(w, 400, map[string]any{"error": "分页参数 limit 必须是 1–500 的整数"})
+			writeJSON(w, 400, errorResponse{Error: "分页参数 limit 必须是 1–500 的整数"})
 			return
 		}
 		limit = n
@@ -1500,10 +1494,10 @@ func (s *Server) writeTrashPage(w http.ResponseWriter, r *http.Request, heal boo
 	page, err := s.st.ListTrashPage(r.Context(), cursor, limit)
 	if err != nil {
 		if errors.Is(err, store.ErrTrashCursor) {
-			writeJSON(w, 400, map[string]any{"error": "分页游标无效，请刷新隔离区"})
+			writeJSON(w, 400, errorResponse{Error: "分页游标无效，请刷新隔离区"})
 			return
 		}
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
 	kept, total := page.Rows, page.Total
@@ -1519,10 +1513,7 @@ func (s *Server) writeTrashPage(w http.ResponseWriter, r *http.Request, heal boo
 	if kept == nil {
 		kept = []store.TrashRow{}
 	}
-	writeJSON(w, 200, map[string]any{
-		"items": kept, "total": total, "returned": len(kept),
-		"has_more": page.HasMore, "next_cursor": page.NextCursor,
-	})
+	writeJSON(w, 200, trashListResponse{Items: kept, Total: total, Returned: len(kept), HasMore: page.HasMore, NextCursor: page.NextCursor})
 }
 
 // trashGroups 组装引擎需要的分组入参：结果页跨组勾选传 group_keys，旧调用只传 group_key。
@@ -1547,7 +1538,7 @@ func (s *Server) trashGroups(single string, many []string) []engine.TrashGroup {
 
 func (s *Server) handleTrashPreview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	if s.scanBusy(w) {
@@ -1561,30 +1552,30 @@ func (s *Server) handleTrashPreview(w http.ResponseWriter, r *http.Request) {
 		GroupKeys []string `json:"group_keys"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	switch body.Action {
 	case "trash":
 		items, err := s.e.PreviewTrash(r.Context(), body.Paths, s.trashGroups(body.GroupKey, body.GroupKeys))
 		if err != nil {
-			writeJSON(w, 400, map[string]any{"error": err.Error()})
+			writeJSON(w, 400, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"action": body.Action, "items": items})
+		writeJSON(w, 200, trashPreviewResponse{Action: body.Action, Items: items})
 	case "restore":
-		writeJSON(w, 200, map[string]any{"action": body.Action, "items": s.e.PreviewRestore(r.Context(), body.IDs)})
+		writeJSON(w, 200, trashPreviewResponse{Action: body.Action, Items: s.e.PreviewRestore(r.Context(), body.IDs)})
 	case "delete":
-		writeJSON(w, 200, map[string]any{"action": body.Action, "items": s.e.PreviewDelete(r.Context(), body.IDs)})
+		writeJSON(w, 200, trashPreviewResponse{Action: body.Action, Items: s.e.PreviewDelete(r.Context(), body.IDs)})
 	default:
-		writeJSON(w, 400, map[string]any{"error": "未知操作"})
+		writeJSON(w, 400, errorResponse{Error: "未知操作"})
 	}
 }
 
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	// v3.10.8（P1-1）：恢复也是写操作，扫描进行中执行会被扫描收尾把旧路径写回 active。
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "恢复仅支持 POST"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "恢复仅支持 POST"})
 		return
 	}
 	if s.scanBusy(w) {
@@ -1594,13 +1585,13 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		IDs []int64 `json:"ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	res := s.e.Restore(r.Context(), body.IDs)
 	// v3.25.2（P3-5）：闸门拒绝时一个文件都没恢复，按 409 回，别让界面显示成「0 个成功」。
 	if res.Conflict != "" {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": res.Conflict})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: res.Conflict})
 		return
 	}
 	writeJSON(w, 200, res)
@@ -1610,7 +1601,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	// v3.17.3（F-17）：永久删除只接受 POST 且要求显式确认，与清空隔离区同口径。
 	// 登录 Cookie 是 SameSite=Lax，顶层 GET 导航会带 Cookie，裸 GET 能被跨站链接直接触发。
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "永久删除仅支持 POST"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "永久删除仅支持 POST"})
 		return
 	}
 	var body struct {
@@ -1618,11 +1609,11 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		Confirm bool    `json:"confirm"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if !body.Confirm {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "永久删除不可恢复，需显式确认（confirm=true）"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "永久删除不可恢复，需显式确认（confirm=true）"})
 		return
 	}
 	// 参数校验放在扫描状态检查之前：请求本身不合法时不必依赖引擎状态，响应也更稳定。
@@ -1631,7 +1622,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	res := s.e.DeletePermanent(r.Context(), body.IDs)
 	if res.Conflict != "" {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": res.Conflict})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: res.Conflict})
 		return
 	}
 	writeJSON(w, 200, res)
@@ -1641,23 +1632,23 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 // 登录 Cookie 是 SameSite=Lax，顶层 GET 导航会带 Cookie，之前的裸 GET 能被跨站链接直接触发。
 func (s *Server) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "清空隔离区仅支持 POST"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "清空隔离区仅支持 POST"})
 		return
 	}
 	var body struct {
 		Confirm bool `json:"confirm"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "清空隔离区不可恢复，需显式确认（confirm=true）"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "清空隔离区不可恢复，需显式确认（confirm=true）"})
 		return
 	}
 	n, errs := s.e.EmptyTrash(r.Context())
-	writeJSON(w, 200, map[string]any{"removed": n, "errors": errs})
+	writeJSON(w, 200, trashRemovedResponse{Removed: n, Errors: errs})
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, 405, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, 405, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
@@ -1720,7 +1711,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		OpLogDetailLimit   *int                   `json:"op_log_detail_limit"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	old := s.cfg.Get() // v3.7.0：保存前的完整快照，用于生成设置变更 diff
@@ -1762,7 +1753,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		// v3.17.5（F-18）：令牌是唯一鉴权手段，非空时要求至少 16 位；
 		// 留空表示关闭鉴权（前端已有二次确认）。
 		if msg := validateTokenStrength(v); msg != "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": msg})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: msg})
 			return
 		}
 		cur.AccessToken = v
@@ -1776,7 +1767,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if body.FFmpeg != nil {
 		v := strings.TrimSpace(*body.FFmpeg)
 		if msg := checkToolPath("FFmpeg", v, vols); msg != "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": msg})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: msg})
 			return
 		}
 		cur.FFmpeg = v
@@ -1784,7 +1775,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if body.FFprobe != nil {
 		v := strings.TrimSpace(*body.FFprobe)
 		if msg := checkToolPath("FFprobe", v, vols); msg != "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": msg})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: msg})
 			return
 		}
 		cur.FFprobe = v
@@ -1803,7 +1794,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		// 刷新后却弹回默认值，用户看不出哪里填错了。
 		v := strings.TrimSpace(*body.QuietHours)
 		if v != "" && !config.ParseQuietHours(v).Valid {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "静默时段格式应为 HH:MM-HH:MM"})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "静默时段格式应为 HH:MM-HH:MM"})
 			return
 		}
 		cur.QuietHours = v
@@ -1815,7 +1806,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		// 路径映射文本逐行解析；格式非法返回 400 并带上行号，避免静默丢映射。
 		pm, err := config.ParsePathMaps(*body.PathMapsText)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 			return
 		}
 		cur.PathMaps = pm
@@ -1881,7 +1872,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		// 否则用户填 23:00-7:00 会以为设置成功、实际唤醒窗口一直没生效。
 		v := strings.TrimSpace(*body.WakeWindow)
 		if v != "" && !config.ParseQuietHours(v).Valid {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "唤醒时段格式应为 HH:MM-HH:MM"})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "唤醒时段格式应为 HH:MM-HH:MM"})
 			return
 		}
 		cur.WakeWindow = v
@@ -1949,7 +1940,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		v := strings.TrimSpace(*body.LogDir)
 		if v != "" {
 			if err := ensureWritableDir(v); err != nil {
-				writeJSON(w, 400, map[string]any{"error": "日志目录不可写：" + err.Error()})
+				writeJSON(w, 400, errorResponse{Error: "日志目录不可写：" + err.Error()})
 				return
 			}
 		}
@@ -1959,7 +1950,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		v := strings.TrimSpace(*body.CacheDir)
 		if v != "" {
 			if err := ensureWritableDir(v); err != nil {
-				writeJSON(w, 400, map[string]any{"error": "缓存目录不可写：" + err.Error()})
+				writeJSON(w, 400, errorResponse{Error: "缓存目录不可写：" + err.Error()})
 				return
 			}
 		}
@@ -1980,7 +1971,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		// 因此保存前就拦下来，避免「保存成功但功能永远不工作」。
 		v := strings.TrimSpace(*body.AIEndpoint)
 		if v != "" && !isValidHTTPURL(v) {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "AI 接口地址应为完整的 http:// 或 https:// 地址"})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "AI 接口地址应为完整的 http:// 或 https:// 地址"})
 			return
 		}
 		cur.AIEndpoint = v
@@ -2008,7 +1999,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &ve) {
 			status = 400
 		}
-		writeJSON(w, status, map[string]any{"error": err.Error()})
+		writeJSON(w, status, errorResponse{Error: err.Error()})
 		return
 	}
 	// 配置已落盘，再切换日志输出；切换失败只告警，不把已保存的设置报成失败。
@@ -2068,10 +2059,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			audioReset = true
 		}
 	}
-	writeJSON(w, 200, map[string]any{
-		"ok": true, "restart_watch": body.Volumes != nil || (body.Watch != nil && *body.Watch != oldWatch),
-		"intro_reset": introReset, "video_reset": videoReset, "audio_reset": audioReset,
-	})
+	writeJSON(w, 200, watchRestartResponse{OK: true, RestartWatch: body.Volumes != nil || (body.Watch != nil && *body.Watch != oldWatch), IntroReset: introReset, VideoReset: videoReset, AudioReset: audioReset})
 }
 
 // handleAuthToken 把当前访问令牌返回给已登录用户（v3.7.2，设置页「查看」用）。
@@ -2080,21 +2068,21 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 // 令牌不会因为一次误点链接就落到第三方页面；同源页面仍可正常查看与复制。
 func (s *Server) handleAuthToken(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	if r.Header.Get("X-Requested-With") != "verify" {
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": "缺少请求标记"})
+		writeJSON(w, http.StatusForbidden, errorResponse{Error: "缺少请求标记"})
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"token": s.cfg.Get().AccessToken})
+	writeJSON(w, 200, tokenResponse{Token: s.cfg.Get().AccessToken})
 }
 
 // handleFSList 为设置页的目录选择弹窗列出子目录，只允许访问 /vol* 与数据目录。
 func (s *Server) handleFSList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// v1.41.3：展示入口与白名单同源（显式配置 ∪ trimacl 自动发现 ∪ 数据目录）
@@ -2106,7 +2094,7 @@ func (s *Server) handleFSList(w http.ResponseWriter, r *http.Request) {
 	// 之后自动出现在两处目录选择器的根列表；未通过则明确拒绝，不放宽任何路径校验。
 	if path != "" && !pathUnderRoots(filepath.Clean(path), roots) {
 		if !fsbrowse.AuthorizedPath(path) {
-			writeJSON(w, http.StatusForbidden, map[string]any{"error": "该路径未在飞牛系统设置中授权，或不是本地存储目录"})
+			writeJSON(w, http.StatusForbidden, errorResponse{Error: "该路径未在飞牛系统设置中授权，或不是本地存储目录"})
 			return
 		}
 		clean := filepath.Clean(path)
@@ -2117,7 +2105,7 @@ func (s *Server) handleFSList(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := fsbrowse.List(roots, s.authzRoots(), path)
 	if err != nil {
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
 	writeJSON(w, 200, list)
@@ -2126,7 +2114,7 @@ func (s *Server) handleFSList(w http.ResponseWriter, r *http.Request) {
 // handleFSMkdir 在允许范围内新建文件夹，供日志/缓存/扫描目录选择使用。
 func (s *Server) handleFSMkdir(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
@@ -2134,21 +2122,21 @@ func (s *Server) handleFSMkdir(w http.ResponseWriter, r *http.Request) {
 		Name   string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	path, err := fsbrowse.Mkdir(s.browseRoots(), body.Parent, body.Name)
 	if err != nil {
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "path": path})
+	writeJSON(w, 200, pathResponse{OK: true, Path: path})
 }
 
 // handleMetric 接收前端性能埋点，只写日志不落库，避免增加数据库负担。
 func (s *Server) handleMetric(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
@@ -2157,12 +2145,12 @@ func (s *Server) handleMetric(w http.ResponseWriter, r *http.Request) {
 		Detail string `json:"detail"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	body.Name = strings.TrimSpace(body.Name)
 	if body.Name == "" || len(body.Name) > 64 {
-		writeJSON(w, 400, map[string]any{"error": "指标名称无效"})
+		writeJSON(w, 400, errorResponse{Error: "指标名称无效"})
 		return
 	}
 	if body.MS < 0 {
@@ -2173,7 +2161,7 @@ func (s *Server) handleMetric(w http.ResponseWriter, r *http.Request) {
 		detail = detail[:200]
 	}
 	applog.Info("界面指标：%s=%dms %s", body.Name, body.MS, detail)
-	writeJSON(w, 200, map[string]any{"ok": true})
+	writeJSON(w, 200, okResponse{OK: true})
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
@@ -2204,7 +2192,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		body.Format = "dc5"
 	}
 	if body.Format != "dc5" && body.Format != "readable" {
-		writeJSON(w, 400, map[string]any{"error": "无效的导出格式，可选 dc5 / readable"})
+		writeJSON(w, 400, errorResponse{Error: "无效的导出格式，可选 dc5 / readable"})
 		return
 	}
 	onlyMarked := body.Scope == "marked"
@@ -2213,7 +2201,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		marked[filepath.Clean(p)] = true
 	}
 	if onlyMarked && len(marked) == 0 {
-		writeJSON(w, 400, map[string]any{"error": "未选择任何标记文件，无法按「仅标记行」导出"})
+		writeJSON(w, 400, errorResponse{Error: "未选择任何标记文件，无法按「仅标记行」导出"})
 		return
 	}
 	groups, truncated, err := s.collectGroups(r.Context(), body.Mode, store.GroupQuery{
@@ -2382,7 +2370,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 // 用于核对"飞牛授权 → 应用可读"的对应关系。GET /api/diag/authz。
 func (s *Server) handleDiagAuthz(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	writeJSON(w, 200, fsbrowse.Diagnose())

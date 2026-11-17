@@ -29,7 +29,7 @@ type cacheKindInfo struct {
 // handleCacheStats GET /api/cache/stats。
 func (s *Server) handleCacheStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	dir := s.cacheDir()
@@ -67,29 +67,21 @@ func (s *Server) handleCacheStats(w http.ResponseWriter, r *http.Request) {
 	if memAuto {
 		budget = cache.AutoMemBudgetMB()
 	}
-	writeJSON(w, 200, map[string]any{
-		"media":           media,
-		"ssd_hint":        media == cache.MediaHDD,
-		"cache_dir":       dir,
-		"mem_budget_mb":   budget,
-		"mem_budget_auto": memAuto,
-		"thumb_max_mb":    cfg.ThumbCacheMaxMB,
-		"classes":         classes,
-	})
+	writeJSON(w, 200, cacheStatsResponse{Media: media, SSDHint: media == cache.MediaHDD, CacheDir: dir, MemBudgetMB: budget, MemBudgetAuto: memAuto, ThumbMaxMB: cfg.ThumbCacheMaxMB, Classes: classes})
 }
 
 // handleCacheClear POST /api/cache/clear {kind}。
 // 清理后各功能自动回退到重算（指纹/探测/缩略图均为可再生数据）。
 func (s *Server) handleCacheClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
 		Kind string `json:"kind"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	var cleared int64
@@ -109,15 +101,15 @@ func (s *Server) handleCacheClear(w http.ResponseWriter, r *http.Request) {
 	case "img_fp":
 		cleared, err = s.st.ClearImgFP(r.Context())
 	default:
-		writeJSON(w, 400, map[string]any{"error": "未知的缓存类别"})
+		writeJSON(w, 400, errorResponse{Error: "未知的缓存类别"})
 		return
 	}
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": "清理失败：" + err.Error()})
+		writeJSON(w, 500, errorResponse{Error: "清理失败：" + err.Error()})
 		return
 	}
 	s.e.NotifyUpdate()
-	writeJSON(w, 200, map[string]any{"ok": true, "cleared": cleared})
+	writeJSON(w, 200, cacheClearedResponse{OK: true, Cleared: cleared})
 }
 
 // clearThumbDisk 删除 cacheDir 下全部 .jpg 缩略图文件，返回删除数。

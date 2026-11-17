@@ -7,7 +7,7 @@
 // 结果组「转码」按钮只入队不执行（决策 C5），执行统一在本页发起。
 async function loadTranscode(){
   try {
-    const r = await api('/api/transcode/status');
+    const r = /** @type {TranscodeStatusResp} */ (await api('/api/transcode/status'));
     S.tcTasks = r.tasks || [];
     S.tcEncoder = r.encoder || '';
   } catch(e) { S.tcTasks = []; }
@@ -116,7 +116,7 @@ async function transcodeStart(){
 // 只移入隔离区，不删除；扫描范围限定在索引里的视频目录，不做全盘遍历。
 async function transcodeCleanResidue(){
   try {
-    const r = await api('/api/transcode/residue');
+    const r = /** @type {TranscodeResidueResp} */ (await api('/api/transcode/residue'));
     const files = r.files || [];
     if (!files.length) {
       toast('没有超过 24 小时的转码残留（扫描 ' + (r.scanned_dirs || 0) + ' 个目录）', 'ok');
@@ -155,7 +155,7 @@ const IMPORT_PAGE = 200; // 详情页每次渲染的组数，防止大导入把 
 async function loadImport(){
   S.loading = true; renderImport();
   try {
-    const r = await api('/api/import/sessions');
+    const r = /** @type {ImportSessionsResp} */ (await api('/api/import/sessions'));
     S.importSessions = r.sessions || [];
   } catch(e) { toast(e.message, 'err'); S.importSessions = []; }
   finally { S.loading = false; renderImport(); }
@@ -164,7 +164,7 @@ async function loadImport(){
 async function loadImportGroups(id){
   S.loading = true; renderImport();
   try {
-    const r = await api('/api/import/groups?session_id=' + id);
+    const r = /** @type {ImportGroupsResp} */ (await api('/api/import/groups?session_id=' + id));
     S.importDetail = { session: r.session, groups: r.groups || [], shown: IMPORT_PAGE };
   } catch(e) { toast(e.message, 'err'); S.importDetail = null; }
   finally { S.loading = false; renderImport(); }
@@ -282,7 +282,7 @@ async function importUpload(){
 async function importDelete(id, name){
   if (!confirm(`删除导入会话「${name || ('#' + id)}」？只删导入记录，不影响文件。`)) return;
   try {
-    await api('/api/import/sessions?id=' + id, { method: 'DELETE' });
+    /** @type {ImportSessionsResp} */ (await api('/api/import/sessions?id=' + id, { method: 'DELETE' }));
     toast('已删除导入会话', 'ok');
     await loadImport();
   } catch(e) { toast(e.message, 'err'); }
@@ -447,7 +447,7 @@ function fillCleanupForm(p){
 
 async function loadCleanupPlans(){
   try {
-    const r = await api('/api/cleanup/plans');
+    const r = /** @type {CleanupPlansResp} */ (await api('/api/cleanup/plans'));
     S.cleanupPlans = r.plans || [];
     renderCleanupList();
   } catch(e) { toast(e.message, 'err'); }
@@ -776,7 +776,7 @@ async function loadSyncPeers(){
   const box = $('syncPeers');
   if (!box) return;
   try {
-    const r = await api('/api/sync/peers');
+    const r = /** @type {SyncPeersResp} */ (await api('/api/sync/peers'));
     const peers = r.peers || [];
     const list = peers.length
       ? peers.map(p => `<div class="scanrow"><span class="mono">${esc(p.machine)}</span><span class="hint">${esc(fmtT(Number(p.imported_at) * 1e9))} · ${p.row_count} 条</span><button class="btn ghost" data-act="sync-peer-del" data-machine="${esc(p.machine)}">删除</button></div>`).join('')
@@ -839,7 +839,7 @@ function selectPaths(paths){
 async function loadVideoTags(){
   const box = $('tagList'); if (!box) return;
   try {
-    const r = await api('/api/video_tags');
+    const r = /** @type {TagsResp} */ (await api('/api/video_tags'));
     const tags = r.tags || [];
     S.videoTags = tags;
     if (!tags.length) {
@@ -919,7 +919,7 @@ async function deleteTagItem(id){
   const tag = (S.videoTags || []).find(t => String(t.id) === String(id));
   if (!confirm('删除标签「' + (tag ? tag.name : id) + '」？只会删除标签定义和已记录的标签值，不影响任何文件。')) return;
   try {
-    await api('/api/video_tags?id=' + id, { method: 'DELETE' });
+    /** @type {TagsResp} */ (await api('/api/video_tags?id=' + id, { method: 'DELETE' }));
     const bg = $('tagGroups'); if (bg) bg.innerHTML = '';
     toast('标签已删除', 'ok');
     await loadVideoTags();
@@ -933,7 +933,7 @@ async function viewTagGroups(id){
   const tag = (S.videoTags || []).find(t => String(t.id) === String(id));
   box.innerHTML = '<span class="hint">分组计算中…</span>';
   try {
-    const r = await api('/api/groups/tag?tag_id=' + id + '&page=1&page_size=20');
+    const r = /** @type {GroupsResp} */ (await api('/api/groups/tag?tag_id=' + id + '&page=1&page_size=20'));
     const groups = r.groups || [];
     if (!groups.length) {
       box.innerHTML = '<span class="hint">「' + esc(tag ? tag.name : '') + '」还没有形成重复组：至少要有 2 个文件的标签值相同。</span>';
@@ -980,7 +980,7 @@ async function loadCacheStats(){
   const box = $('cacheStats'), hint = $('cacheMediaHint');
   if (!box) return;
   try {
-    const st = await api('/api/cache/stats');
+    const st = /** @type {CacheStatsResp} */ (await api('/api/cache/stats'));
     if (hint) {
       hint.innerHTML = st.ssd_hint
         ? '<div class="warnbox">当前缓存目录位于<b>机械硬盘</b>（' + esc(st.cache_dir) + '）。建议把缓存目录移到固态硬盘：修改上方「缩略图缓存目录」为 SSD 路径即可，旧缓存会按需自动重建。</div>'
@@ -1140,7 +1140,7 @@ async function loadHealth(){
   const h = healthState();
   h.loading = true; renderHealth();
   try {
-    const st = await api('/api/health/status');
+    const st = /** @type {HealthStatusResp} */ (await api('/api/health/status'));
     h.progress = st.progress || null;
     h.counts = st.counts || {};
     h.uncertain = st.uncertain || {};
@@ -1282,7 +1282,7 @@ function scheduleHealthPoll(){
     const before = Number((h.progress && h.progress.processed) || 0);
     let p = null;
     try {
-      const st = await api('/api/health/status');
+      const st = /** @type {HealthStatusResp} */ (await api('/api/health/status'));
       p = st.progress || null;
       if (st.counts) h.counts = st.counts;
       if (st.uncertain) h.uncertain = st.uncertain;
@@ -1668,11 +1668,13 @@ TABLE_SORT_HOOKS.health = () => { renderHealth(); };
 // showCurrentToken v3.7.2：向服务端取当前生效令牌并回填只读输入框。
 // 接口只对已登录会话返回，避免登录前就能从界面拿到；输入框用 text 便于复制。
 async function showCurrentToken(){
-  const el = $('sTokenView');
+  // v3.27 类型层：显式标注为 HTMLInputElement，
+  // 否则 $() 的返回值是 HTMLElement，el.select() / el.value 会被 tsc 判为不存在。
+  const el = /** @type {HTMLInputElement|null} */ ($('sTokenView'));
   if (!el) return;
   if (!S.status || !S.status.auth || !S.status.auth.required) { toast('当前未启用访问令牌', 'warn'); return; }
   try {
-    const r = await api('/api/auth/token');
+    const r = /** @type {TokenResp} */ (await api('/api/auth/token'));
     el.value = r.token || '';
     el.select();
   } catch(e) { toast(e.message, 'err'); }

@@ -603,6 +603,20 @@ async function copyText(text, okMsg){
   }
 }
 
+/**
+ * 统一请求封装。
+ *
+ * v3.27 类型层：加泛型 <T>，调用点可标注期望的响应类型，
+ * 让「后端改了字段名 → 前端还在用旧字段」在 tsc --noEmit 期就被发现，
+ * 而不是等运行时被 `|| []` 静默兜底成空列表。
+ *
+ * 标注只在编译期生效，运行时代码与产物完全不变（零构建约束不变）。
+ *
+ * @template {any} [T=any] 期望的响应结构；不标注时按 any 处理（保持既有调用点行为不变）
+ * @param {string} url
+ * @param {RequestInit} [opts]
+ * @returns {Promise<T|Response>}
+ */
 async function api(url, opts){
   // v3.10.7：所有请求在这里统一补自定义头。v3.10.6 只在 postJSON 里加，
   // 导出 CSV / HTML 报告 / 操作记录导出 / CSV 导入 / 各类删除都直接调 api() 或裸 fetch，
@@ -624,7 +638,8 @@ async function api(url, opts){
     err.status = r.status;
     throw err;
   }
-  return ct.includes('application/json') ? r.json() : r;
+  if (!ct.includes('application/json')) return r;
+  return /** @type {Promise<T>} */ (await r.json());
 }
 
 function postJSON(url, obj){
@@ -650,7 +665,7 @@ function renderExclusiveTask(st){
 }
 
 async function refreshStatus(){
-  const st = await api('/api/status');
+  const st = /** @type {StatusResp} */ (await api('/api/status'));
   S.status = st;
   if (S.introN == null && st.config) S.introN = Number(st.config.intro_seconds || 10);
   $('ver').textContent = 'v' + (st.version || '1.0.0');
@@ -881,9 +896,19 @@ function saveColWidths(){
 
 // resultColumns v3.9.2：kind 用于合并结果页的分组类型。
 // 不同类型的组可出现的列不同（预览图、操作列），表头/colgroup 必须与行结构一致，否则列会错位。
+/**
+ * 结果页/分组页的列定义。
+ *
+ * v3.27 类型层：cols 显式标注为 ResultColumn[]，避免 TS 从第一个元素
+ * 推断出「cls 必填、不能有 align」的过窄类型。运行时行为不变。
+ *
+ * @param {string} [kind]
+ * @returns {ResultColumn[]}
+ */
 function resultColumns(kind){
   const results = S.tab === 'results';
   const isVid = results ? (kind === 'video' || kind === 'intro') : (S.tab === 'video' || S.tab === 'intro');
+  /** @type {ResultColumn[]} */
   const cols = [{id:'sel', label:'', width:32, cls:'sel'}];
   // v3.9.2 修复：缩略图是全局开关，任何分组都应有预览列；没有可预览扩展名时行内显示“无预览”。
   if (S.genThumbs) {
@@ -1041,7 +1066,14 @@ function importDetailColumns(){
 }
 
 // v3.9.6：文件健康页列定义——繁体页多一列「改后文件名」。
+// v3.9.6：文件健康页列定义——繁体页多一列「改后文件名」。
+// v3.27 类型层：同 resultColumns，cols 显式标注为 ResultColumn[]。
+/**
+ * @param {boolean} isTrad
+ * @returns {ResultColumn[]}
+ */
 function healthColumns(isTrad){
+  /** @type {ResultColumn[]} */
   const cols = [
     {id:'h-sel', label:'', width:32, cls:'sel'},
     {id:'h-name', label:'文件名', width:220, sort:'text'}

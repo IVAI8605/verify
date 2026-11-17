@@ -48,27 +48,27 @@ type renamePlanReq struct {
 // 入参二选一：显式 files 清单，或 v3.20 的搜索全选凭据 selection_token。
 func (s *Server) handleRenamePlan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var req renamePlanReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if errors.Is(err, errReplacementChar) {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": errReplacementChar.Error()})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: errReplacementChar.Error()})
 			return
 		}
 		// v3.25.0（P2-2）：超过 64MiB 时 MaxBytesReader 报的是
 		// http.MaxBytesError，旧实现统一按 400「字段类型不对」返回，调用方以为数据格式有问题。
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "改名计划请求体过大，请分多批提交"})
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{Error: "改名计划请求体过大，请分多批提交"})
 			return
 		}
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if len(req.Methods) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "缺少改名方法"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "缺少改名方法"})
 		return
 	}
 	if s.scanBusy(w) {
@@ -80,7 +80,7 @@ func (s *Server) handleRenamePlan(w http.ResponseWriter, r *http.Request) {
 		var err error
 		paths, err = s.resolveSelectionPaths(r.Context(), req.SelectionToken, req.Excludes)
 		if err != nil {
-			writeJSON(w, http.StatusGone, map[string]any{"error": err.Error()})
+			writeJSON(w, http.StatusGone, errorResponse{Error: err.Error()})
 			return
 		}
 		source = "search"
@@ -102,18 +102,18 @@ func (s *Server) handleRenamePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	paths = merged
 	if len(paths) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "没有要改名的文件"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "没有要改名的文件"})
 		return
 	}
 	if len(paths) > renamePlanMaxPaths {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "一次最多处理 50 万个文件，请收窄筛选后再试"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "一次最多处理 50 万个文件，请收窄筛选后再试"})
 		return
 	}
 
 	plan := s.e.BuildRenamePlan(r.Context(), paths, req.Methods)
 	planID, err := s.st.CreateRenamePlan(r.Context(), len(plan))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "创建改名计划失败：" + err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "创建改名计划失败：" + err.Error()})
 		return
 	}
 	rows := make([]store.RenamePlanItemRow, 0, len(plan))
@@ -138,7 +138,7 @@ func (s *Server) handleRenamePlan(w http.ResponseWriter, r *http.Request) {
 		if derr := s.st.DiscardRenamePlan(context.WithoutCancel(r.Context()), planID); derr != nil {
 			applog.Warn("清理未写入明细的改名计划失败：plan=%d（%v）", planID, derr)
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "保存改名计划失败：" + err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "保存改名计划失败：" + err.Error()})
 		return
 	}
 	// 预览只回前 200 条：40 万条全回会把响应撑大，界面也看不过来。
@@ -153,14 +153,7 @@ func (s *Server) handleRenamePlan(w http.ResponseWriter, r *http.Request) {
 			"path": it.OldPath, "orig": it.OldName, "target": it.NewName, "error": it.Error,
 		})
 	}
-	writeJSON(w, 200, map[string]any{
-		"plan_id":   planID,
-		"total":     len(plan),
-		"conflicts": conflicts,
-		"errors":    errCount,
-		"source":    source,
-		"samples":   samples,
-	})
+	writeJSON(w, 200, renamePlanCreateResponse{PlanID: planID, Total: len(plan), Conflicts: conflicts, Errors: errCount, Source: source, Samples: samples})
 }
 
 type renameChunkReq struct {
@@ -172,54 +165,54 @@ type renameChunkReq struct {
 // 服务端按 pending 顺序取一片，执行完回填状态；重复调用即可续跑。
 func (s *Server) handleRenameExecuteChunk(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var req renameChunkReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if req.PlanID <= 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "缺少计划 ID"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "缺少计划 ID"})
 		return
 	}
 	ok, err := s.st.RenamePlanExists(r.Context(), req.PlanID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "改名计划不存在或已清理，请重新生成"})
+		writeJSON(w, http.StatusNotFound, errorResponse{Error: "改名计划不存在或已清理，请重新生成"})
 		return
 	}
 	// v3.22.0：取消只在片边界生效。置过取消标记后，本片（若已在跑）会跑完，
 	// 下一次分片请求直接返回「已取消」，剩余 pending 保留可续跑。
 	if s.renameCancel.take(req.PlanID) {
 		total, done, failed, pending, _, _ := s.st.RenamePlanStatus(r.Context(), req.PlanID)
-		writeJSON(w, 200, map[string]any{
-			"cancelled": true, "done": 0, "failed": 0, "remaining": pending,
-			"total": total, "total_done": done, "total_failed": failed,
+		writeJSON(w, 200, renameChunkCancelledResult{
+			Cancelled: true, Done: 0, Failed: 0, Remaining: pending,
+			Total: total, TotalDone: done, TotalFailed: failed,
 		})
 		return
 	}
 	rows, err := s.st.NextRenamePlanItems(r.Context(), req.PlanID, req.Limit)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
 	if len(rows) == 0 {
 		total, done, failed, pending, status, serr := s.st.RenamePlanStatus(r.Context(), req.PlanID)
 		if serr != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": serr.Error()})
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: serr.Error()})
 			return
 		}
 		if pending == 0 && status != "done" {
 			_ = s.st.SetRenamePlanStatus(r.Context(), req.PlanID, "done")
 		}
-		writeJSON(w, 200, map[string]any{
-			"done": 0, "failed": 0, "remaining": pending,
-			"total": total, "total_done": done, "total_failed": failed,
+		writeJSON(w, 200, renameChunkDoneResult{
+			Done: 0, Failed: 0, Remaining: pending,
+			Total: total, TotalDone: done, TotalFailed: failed,
 		})
 		return
 	}
@@ -239,7 +232,7 @@ func (s *Server) handleRenameExecuteChunk(w http.ResponseWriter, r *http.Request
 	}
 	res, err := s.e.ExecuteRenamePlan(r.Context(), chunk, nil, 0)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
 	// v3.22.0：每批失败明细单独落盘，不依赖界面导出，也方便事后对账。
@@ -247,10 +240,10 @@ func (s *Server) handleRenameExecuteChunk(w http.ResponseWriter, r *http.Request
 	results, skipped := renameChunkResults(rows, res.Items, res.BatchID)
 	if err := s.st.MarkRenamePlanResults(r.Context(), req.PlanID, results); err != nil {
 		// 文件已经改完，回填失败只告警；重复执行会因「目标不存在」被逐条标记失败，不会重复改名。
-		writeJSON(w, 200, map[string]any{
-			"batch_id": res.BatchID, "done": res.Done, "failed": res.Failed,
-			"remaining": skipped, "warning": "执行结果回填失败：" + err.Error(),
-			"items": res.Items, "reconcile": res.Reconcile,
+		writeJSON(w, 200, renameChunkWarningResult{
+			BatchID: res.BatchID, Done: res.Done, Failed: res.Failed,
+			Remaining: skipped, Warning: "执行结果回填失败：" + err.Error(),
+			Items: res.Items, Reconcile: res.Reconcile,
 		})
 		return
 	}
@@ -265,10 +258,10 @@ func (s *Server) handleRenameExecuteChunk(w http.ResponseWriter, r *http.Request
 	case pending == 0 && status != "done":
 		_ = s.st.SetRenamePlanStatus(r.Context(), req.PlanID, "done")
 	}
-	writeJSON(w, 200, map[string]any{
-		"batch_id": res.BatchID, "done": res.Done, "failed": res.Failed,
-		"remaining": pending, "total": total, "total_done": done, "total_failed": failed,
-		"items": res.Items, "reconcile": res.Reconcile,
+	writeJSON(w, 200, renameChunkResult{
+		BatchID: res.BatchID, Done: res.Done, Failed: res.Failed,
+		Remaining: pending, Total: total, TotalDone: done, TotalFailed: failed,
+		Items: res.Items, Reconcile: res.Reconcile,
 	})
 }
 
@@ -302,23 +295,20 @@ func renameChunkResults(rows []store.RenamePlanItemRow, items []store.RenameBatc
 // 界面刷新后用它决定是否还有未执行完的片可以续跑。
 func (s *Server) handleRenamePlanStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	id, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("plan_id")), 10, 64)
 	if id <= 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "无效的计划 ID"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "无效的计划 ID"})
 		return
 	}
 	total, done, failed, pending, status, err := s.st.RenamePlanStatus(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "改名计划不存在或已清理"})
+		writeJSON(w, http.StatusNotFound, errorResponse{Error: "改名计划不存在或已清理"})
 		return
 	}
-	writeJSON(w, 200, map[string]any{
-		"plan_id": id, "total": total, "done": done, "failed": failed,
-		"pending": pending, "status": status,
-	})
+	writeJSON(w, 200, renamePlanStatusResponse{PlanID: id, Total: total, Done: done, Failed: failed, Pending: pending, Status: status})
 }
 
 // ---------- v3.22.0：取消 / 失败明细 / 最近批次 / 多批撤销 ----------
@@ -361,20 +351,20 @@ type renameCancelReq struct {
 // handleRenameCancel POST /api/rename/cancel — 请求取消或清除取消标记（v3.22.0）。
 func (s *Server) handleRenameCancel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var req renameCancelReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if req.PlanID <= 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "缺少计划 ID"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "缺少计划 ID"})
 		return
 	}
 	s.renameCancel.set(req.PlanID, !req.Clear)
-	writeJSON(w, 200, map[string]any{"ok": true, "plan_id": req.PlanID, "cancel": !req.Clear})
+	writeJSON(w, 200, renameCancelResponse{OK: true, PlanID: req.PlanID, Cancel: !req.Clear})
 }
 
 type renameUndoBatchReq struct {
@@ -385,20 +375,20 @@ type renameUndoBatchReq struct {
 // 后改的先撤：同一文件被两次改名时，顺序反了会互相覆盖。
 func (s *Server) handleRenameUndoBatch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var req renameUndoBatchReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	if len(req.BatchIDs) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "没有要撤销的批次"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "没有要撤销的批次"})
 		return
 	}
 	if len(req.BatchIDs) > 200 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "一次最多撤销 200 个批次"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "一次最多撤销 200 个批次"})
 		return
 	}
 	type batchResult struct {
@@ -424,22 +414,22 @@ func (s *Server) handleRenameUndoBatch(w http.ResponseWriter, r *http.Request) {
 		items = append(items, failures...)
 		batches = append(batches, batchResult{BatchID: id, Done: d, Failed: f, Status: status})
 	}
-	writeJSON(w, 200, map[string]any{"done": done, "failed": failed, "items": items, "batches": batches})
+	writeJSON(w, 200, renameBatchesResult{Done: done, Failed: failed, Items: items, Batches: batches})
 }
 
 // handleRecentRenameBatches GET /api/rename/batches/recent — 最近批次（v3.22.0）。
 // 页面刷新或关掉再进时，用它恢复撤销入口，不依赖浏览器内存里的 batch_id。
 func (s *Server) handleRecentRenameBatches(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	list, err := s.st.RecentRenameBatches(r.Context(), int(intParam(r, "limit", 20, 1, 100)))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"batches": list})
+	writeJSON(w, 200, renameBatchesResponse{Batches: list})
 }
 
 // writeRenameFailureCSV 把一批失败明细写成 CSV（v3.22.0）。

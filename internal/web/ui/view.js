@@ -428,7 +428,7 @@ function taskHistoryHtml(){
 
 async function loadTaskHistory(){
   try {
-    const r = await api('/api/tasks');
+    const r = /** @type {TasksResp} */ (await api('/api/tasks'));
     S.taskHistory = r.history || [];
   } catch(e) {
     S.taskHistory = [];
@@ -470,6 +470,15 @@ function resultHeadHtml(kind){
 
 // unifiedGroupCardHtml v3.8.0：合并结果页的统一组卡片。
 // 与旧分页面的区别：类型来自 g.kind，不再依赖当前标签；媒体类只在行内补差异信息。
+/**
+ * 统一结果页的分组卡片。
+ *
+ * v3.27 类型层：g 标注为 Group，字段名拼错或后端改字段名会在 tsc --noEmit 期报错，
+ * 而不是等到运行时被 `|| 0` 静默兜底成 0。
+ *
+ * @param {StoreGroup} g
+ * @param {number} gi
+ */
 function unifiedGroupCardHtml(g, gi){
   const kind = g.kind || 'exact';
   const sel = S.sel[g.key] || new Set();
@@ -535,6 +544,11 @@ function unifiedGroupCardHtml(g, gi){
 }
 
 // v3.17.2：旧分页面卡片路径随标签合并失去入口，S.tab 恒为 results，这里只留统一卡片转发。
+/**
+ * 分组卡片（旧结果页入口，转发到统一卡片）。
+ * @param {StoreGroup} g
+ * @param {number} gi
+ */
 function groupCardHtml(g, gi){
   if (S.tab === 'results') return unifiedGroupCardHtml(g, gi);
 }

@@ -13,7 +13,7 @@ import (
 // near=0 时仅同键精确匹配；仅分组不删。
 func (s *Server) handleFuzzyGroups(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	near := r.URL.Query().Get("near") != "0"
@@ -23,7 +23,7 @@ func (s *Server) handleFuzzyGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	groups, err := s.e.FuzzyGroups(r.Context(), near)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
 	groups = filterGroupsByRoots(groups, s.cfg.Get().Volumes)
@@ -45,5 +45,5 @@ func (s *Server) handleFuzzyGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	pageGroups := groups[start:end]
 	pageGroups = s.attachTagsForPage(r, pageGroups)
-	writeJSON(w, 200, map[string]any{"groups": pageGroups, "total": len(groups), "page": page, "page_size": pageSize})
+	writeJSON(w, 200, groupsResponse{Groups: pageGroups, Total: int64(len(groups)), Page: page, PageSize: pageSize})
 }

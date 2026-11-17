@@ -40,12 +40,7 @@ func matchModeAllows(cfg *config.Config, kind string) bool {
 
 // writeModeDisabled 用与「重复文件夹已关闭」相同的响应形状，前端可直接复用提示逻辑。
 func writeModeDisabled(w http.ResponseWriter, kind string) {
-	writeJSON(w, 200, map[string]any{
-		"groups":   []store.Group{},
-		"total":    0,
-		"disabled": true,
-		"reason":   "当前匹配模式未启用" + modeKindLabel(kind),
-	})
+	writeJSON(w, 200, matchModeDisabledResponse{Groups: []store.Group{}, Total: 0, Disabled: true, Reason: "当前匹配模式未启用" + modeKindLabel(kind)})
 }
 
 func modeKindLabel(kind string) string {

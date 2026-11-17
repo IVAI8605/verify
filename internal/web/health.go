@@ -37,7 +37,7 @@ func parseContentMode(v string) health.ContentMode {
 // handleHealthScan 启动一次文件健康检测。
 func (s *Server) handleHealthScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body healthScanRequest
@@ -45,21 +45,21 @@ func (s *Server) handleHealthScan(w http.ResponseWriter, r *http.Request) {
 
 	kind := health.Kind(body.Kind)
 	if !kind.Valid() && !health.IsAll(kind) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "未知的检测类型"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未知的检测类型"})
 		return
 	}
 	// 全量扫描里 ffmpeg 只影响损坏文件一类，缺了它就跳过该类型，而不是整轮失败。
 	if kind == health.KindBroken && !s.e.RunnerAvailable() {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "未找到 ffmpeg，无法检测损坏视频"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未找到 ffmpeg，无法检测损坏视频"})
 		return
 	}
 
 	opt := healthOptions(kind, body)
 	if err := s.e.StartHealth(kind, opt); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "kind": string(kind)})
+	writeJSON(w, 200, kindOKResponse{OK: true, Kind: string(kind)})
 }
 
 // healthOptions 把请求体翻译成引擎参数，只保留该检测类型真正用得上的字段。
@@ -89,11 +89,11 @@ func healthOptions(kind health.Kind, body healthScanRequest) engine.HealthOption
 // handleHealthCancel 取消正在进行的检测。
 func (s *Server) handleHealthCancel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	s.e.CancelHealth()
-	writeJSON(w, 200, map[string]any{"ok": true})
+	writeJSON(w, 200, okResponse{OK: true})
 }
 
 // handleHealthStatus 返回进度、四类计数与 ffmpeg 可用性。
@@ -118,15 +118,7 @@ func (s *Server) handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			uncertain[string(health.KindBroken)] += n
 		}
 	}
-	writeJSON(w, 200, map[string]any{
-		"progress":    s.e.HealthState(),
-		"counts":      counts,
-		"uncertain":   uncertain,
-		"ffmpeg":      s.e.RunnerAvailable(),
-		"last_audit":  lastAudit,
-		"auto":        s.e.AutoProbeState(),
-		"probe_cache": map[string]any{"total": probedTotal, "broken": probedBroken},
-	})
+	writeJSON(w, 200, healthStatusResponse{Progress: s.e.HealthState(), Counts: counts, Uncertain: uncertain, FFmpeg: s.e.RunnerAvailable(), LastAudit: lastAudit, Auto: s.e.AutoProbeState(), ProbeCache: map[string]any{"total": probedTotal, "broken": probedBroken}})
 }
 
 // handleHealthResults 按类别分页返回结果。
@@ -136,7 +128,7 @@ func (s *Server) handleHealthResults(w http.ResponseWriter, r *http.Request) {
 	}
 	kind := health.Kind(r.URL.Query().Get("kind"))
 	if !kind.Valid() {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "未知的检测类型"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未知的检测类型"})
 		return
 	}
 	// v3.10.8：前端按 2000 一页拉取（settings.js 注释即此口径），HTTP 入口统一收敛。
@@ -146,15 +138,11 @@ func (s *Server) handleHealthResults(w http.ResponseWriter, r *http.Request) {
 
 	items, err := s.st.ListHealthResults(r.Context(), string(kind), limit, offset)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
 	total, _ := s.st.CountHealthResults(r.Context(), string(kind))
-	writeJSON(w, 200, map[string]any{
-		"kind":  string(kind),
-		"total": total,
-		"items": items,
-	})
+	writeJSON(w, 200, healthItemsResponse{Kind: string(kind), Total: total, Items: items})
 }
 
 // healthPathsRequest 是需要操作的文件列表。
@@ -170,27 +158,27 @@ type healthPathsRequest struct {
 // handleHealthRename 批量修正扩展名或文件名。
 func (s *Server) handleHealthRename(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body healthPathsRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "请求体解析失败"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求体解析失败"})
 		return
 	}
 	kind := health.Kind(body.Kind)
 	if kind != health.KindExt && kind != health.KindName {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "该类型不支持重命名"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "该类型不支持重命名"})
 		return
 	}
 	if len(body.Paths) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "未选择文件"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未选择文件"})
 		return
 	}
 	// v3.10.0 UI-03：检测进行中改名，当轮结果仍按旧路径落库，界面会立刻出现死行；
 	// 直接挡住，等这轮检测结束再改，比事后补刷更稳。
 	if s.e.HealthRunning() {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "健康检测进行中，请等检测结束再改名"})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: "健康检测进行中，请等检测结束再改名"})
 		return
 	}
 	if s.scanBusy(w) {
@@ -207,7 +195,7 @@ func (s *Server) handleHealthRename(w http.ResponseWriter, r *http.Request) {
 // 已被替换成 U+FFFD，回传的字符串对不上磁盘文件，写入口护栏也会直接拒绝。
 func (s *Server) handleHealthFixEncoding(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
@@ -219,7 +207,7 @@ func (s *Server) handleHealthFixEncoding(w http.ResponseWriter, r *http.Request)
 		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
 	if s.e.HealthRunning() {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "健康检测进行中，请等检测结束再修复"})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: "健康检测进行中，请等检测结束再修复"})
 		return
 	}
 	if s.scanBusy(w) {
@@ -232,7 +220,7 @@ func (s *Server) handleHealthFixEncoding(w http.ResponseWriter, r *http.Request)
 // handleHealthTrash 把选中文件移入隔离区。
 func (s *Server) handleHealthTrash(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	if s.scanBusy(w) {
@@ -240,16 +228,16 @@ func (s *Server) handleHealthTrash(w http.ResponseWriter, r *http.Request) {
 	}
 	// 检测进行中移走文件，本轮结论会挂在已不存在的路径上（撤销改名同理）。
 	if s.e.HealthRunning() {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "健康检测进行中，请等检测结束再操作"})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: "健康检测进行中，请等检测结束再操作"})
 		return
 	}
 	var body healthPathsRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "请求体解析失败"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求体解析失败"})
 		return
 	}
 	if len(body.Paths) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "未选择文件"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未选择文件"})
 		return
 	}
 	writeJSON(w, 200, s.e.TrashHealthFiles(r.Context(), body.Paths))
@@ -258,7 +246,7 @@ func (s *Server) handleHealthTrash(w http.ResponseWriter, r *http.Request) {
 // handleHealthUndo 按任务号撤销批量重命名。
 func (s *Server) handleHealthUndo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	// v3.10.8（P1-1）：健康撤销同样会改磁盘与索引，扫描进行中不许执行
@@ -266,19 +254,19 @@ func (s *Server) handleHealthUndo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.e.HealthRunning() {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "健康检测进行中，请等检测结束再操作"})
+		writeJSON(w, http.StatusConflict, errorResponse{Error: "健康检测进行中，请等检测结束再操作"})
 		return
 	}
 	var body struct {
 		TaskID int64 `json:"task_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.TaskID == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "缺少 task_id"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "缺少 task_id"})
 		return
 	}
 	res, err := s.e.UndoHealthTask(r.Context(), body.TaskID)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
 	writeJSON(w, 200, res)

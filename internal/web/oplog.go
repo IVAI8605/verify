@@ -331,21 +331,21 @@ func opQueryFromRequest(r *http.Request) store.OpQuery {
 // handleOpLog 是操作记录的只读查询接口。
 func (s *Server) handleOpLog(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	q := opQueryFromRequest(r)
 	items, total, err := s.st.ListOps(r.Context(), q)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
-	resp := map[string]any{
-		"items": items, "total": total, "page": q.Page, "page_size": q.PageSize,
+	resp := oplogListResponse{
+		Items: items, Total: total, Page: q.Page, PageSize: q.PageSize,
 	}
 	// 给满页时返回下一页游标：前端拿 before_id 再请求即可跳过 OFFSET。
 	if len(items) == q.PageSize {
-		resp["next_before_id"] = items[len(items)-1].ID
+		resp.NextBeforeID = items[len(items)-1].ID
 	}
 	writeJSON(w, 200, resp)
 }
@@ -353,7 +353,7 @@ func (s *Server) handleOpLog(w http.ResponseWriter, r *http.Request) {
 // handleOpLogExport 把当前筛选结果导出为 CSV（带 BOM，Excel 直接可开）。
 func (s *Server) handleOpLogExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	q := opQueryFromRequest(r)
@@ -406,7 +406,7 @@ func csvSafe(s string) string {
 // handleOpLogClear 清理指定时间之前的记录，必须二次确认；清理动作本身先留痕。
 func (s *Server) handleOpLogClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "请求方法不支持"})
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
 	var body struct {
@@ -414,12 +414,12 @@ func (s *Server) handleOpLogClear(w http.ResponseWriter, r *http.Request) {
 		Confirm bool  `json:"confirm"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 400, map[string]any{"error": friendlyDecodeError(err)})
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
 	now := time.Now().UnixMilli()
 	if !body.Confirm || body.Before <= 0 || body.Before > now {
-		writeJSON(w, 400, map[string]any{"error": "需要确认，且清理时间不能是未来"})
+		writeJSON(w, 400, errorResponse{Error: "需要确认，且清理时间不能是未来"})
 		return
 	}
 	e := oplog.New("oplog_clear")
@@ -429,13 +429,13 @@ func (s *Server) handleOpLogClear(w http.ResponseWriter, r *http.Request) {
 	e.FromContext(r.Context())
 	if err := s.st.InsertOp(r.Context(), e, s.cfg.Get().OpLogDetailLimit); err != nil {
 		applog.Warn("清理操作记录前写入审计失败，已拒绝执行：%v", err)
-		writeJSON(w, 500, map[string]any{"error": "操作记录写入失败，已取消清理，请查看服务端日志"})
+		writeJSON(w, 500, errorResponse{Error: "操作记录写入失败，已取消清理，请查看服务端日志"})
 		return
 	}
 	n, err := s.st.PurgeOpsBefore(r.Context(), body.Before)
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": publicErrorText(err.Error())})
+		writeJSON(w, 500, errorResponse{Error: publicErrorText(err.Error())})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "removed": n})
+	writeJSON(w, 200, okRemovedResponse{OK: true, Removed: n})
 }

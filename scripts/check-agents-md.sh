@@ -71,10 +71,19 @@ ui_missing=""
 for f in index.html styles.css $ui_modules; do
 	[ -f "internal/web/ui/$f" ] || ui_missing="$ui_missing $f"
 done
+# v3.27 类型层：类型声明放在 webtypes/ 而不是 internal/web/ui/，
+# 这样 go:embed ui 不会把编译期文件打进二进制（ui/ 里的文件数仍是 8）。
 if [ "$ui_count" = "8" ] && [ -z "$ui_missing" ]; then
 	ok "internal/web/ui 含 index.html + 6 个 JS 模块 + styles.css（go:embed 单二进制）"
 else
 	bad "internal/web/ui 应恰含 8 个文件，实际 $ui_count 个，缺失：${ui_missing:-无}"
+fi
+
+# v3.27 类型层：类型声明必须在 ui/ 之外，否则会被 go:embed 打进二进制。
+if [ -f "webtypes/types.d.ts" ] && [ ! -f "internal/web/ui/types.d.ts" ]; then
+	ok "类型声明在 webtypes/（不进 go:embed 产物）"
+else
+	bad "类型声明位置不对：应在 webtypes/types.d.ts，且不得放在 internal/web/ui/ 内"
 fi
 
 if grep -q '//go:embed ui' internal/web/server.go; then
