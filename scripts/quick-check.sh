@@ -74,23 +74,35 @@ else
 fi
 
 echo "[前端类型]"
-# v3.27 类型层：tsc --noEmit 只做类型检查，不产出运行时代码，产物仍是原生 JS。
+# v4.0.0：tsc --noEmit 只做类型检查，不产出运行时代码，产物仍是原生 JS。
 # 目的是让「后端改了响应字段名 → 前端还在用旧字段」在提交前就被发现，
 # 而不是等运行时被 `|| []` 静默兜底成空列表。
 #
-# TS2339（属性不存在于 HTMLElement/Element）当前是已知噪音：
-# 前端大量用 el.value / el.checked / el.offsetHeight 这类 DOM 属性，
-# 但 getElementById 的返回类型没有收窄到具体元素类型。
-# 这类错误不阻断，但其余类型错误（字段拼错、对象字面量重复键、参数类型不符）必须阻断。
+# TS2339（属性不存在）要分两种看：
+#   - DOM 相关（HTMLElement/Element 上取 el.value / el.checked / el.offsetHeight）：
+#     getElementById 的返回类型没有收窄到具体元素类型，是已知噪音，不阻断；
+#   - 其它（响应 struct 上取 r.disabled 这类不存在的字段）：
+#     是真错误，必须阻断。
+# 所以不能整类豁免 TS2339，只豁免「报错文本里出现 DOM 类型名」的。
 if ! command -v node >/dev/null 2>&1; then
 	echo "  SKIP  未找到 node，前端类型未检查"
 elif [ ! -x node_modules/.bin/tsc ]; then
 	echo "  SKIP  未安装 TypeScript（npm install），前端类型未检查"
 else
 	ts_out=$(node_modules/.bin/tsc --noEmit 2>&1)
-	ts_bad=$(printf '%s\n' "$ts_out" | grep -E "error TS" | grep -vE "error TS2339" || true)
+	# DOM 噪音的判定：报错行里出现 DOM 元素类型名（HTMLElement / Element / HTML*Element 等）。
+	# 这类错误来自 getElementById 返回类型没收窄到具体元素类型，与响应契约无关。
+	# 其它 TS2339（比如响应 struct 上取不存在的字段）是真错误，必须阻断。
+	# 已知 DOM 噪音：getElementById / 事件回调的返回类型没有收窄到具体元素，
+	# 在 HTMLElement / Element / EventTarget / Window / Event / Error / Node 上取
+	# value / checked / dataset / closest / status 这类属性会报 TS2339。
+	# 这与「响应契约」无关，豁免；其余 TS2339（响应 struct 上取不存在的字段）必须阻断。
+	dom_pat="on type '[^']*(HTMLElement|Element|HTML[A-Za-z]+Element|EventTarget|Event|Node|Window|Error)[^']*'"
+	ts_dom=$(printf '%s\n' "$ts_out" | grep -E "error TS" | grep -E "$dom_pat" || true)
+	ts_bad=$(printf '%s\n' "$ts_out" | grep -E "error TS" | grep -vE "$dom_pat" || true)
 	if [ -z "$ts_bad" ]; then
-		ok "tsc --noEmit 通过（除已知 DOM 噪音 TS2339 外无类型错误）"
+		dom_n=$(printf '%s\n' "$ts_dom" | grep -c "error TS" || true)
+		ok "tsc --noEmit 通过（已知 DOM 噪音 $dom_n 处已豁免，无其它类型错误）"
 	else
 		bad "tsc --noEmit 失败："
 		printf '%s\n' "$ts_bad" | head -15

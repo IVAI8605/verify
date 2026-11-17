@@ -7,7 +7,7 @@
 // 结果组「转码」按钮只入队不执行（决策 C5），执行统一在本页发起。
 async function loadTranscode(){
   try {
-    const r = /** @type {TranscodeStatusResp} */ (await api('/api/transcode/status'));
+    const r = /** @type {TranscodeTasksResp} */ (await api('/api/transcode/status'));
     S.tcTasks = r.tasks || [];
     S.tcEncoder = r.encoder || '';
   } catch(e) { S.tcTasks = []; }
@@ -267,7 +267,7 @@ async function importUpload(){
   if (nameEl && nameEl.value.trim()) fd.append('name', nameEl.value.trim());
   try {
     // v3.10.7：改走 api()，让 multipart 写请求带上 CSRF 校验所需的 X-Requested-With
-    const r = await api('/api/import', { method:'POST', body: fd });
+    const r = /** @type {AnyResp} */ (await api('/api/import', { method:'POST', body: fd }));
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || '导入失败');
     S.importDetail = null;
@@ -958,13 +958,13 @@ async function viewTagGroups(id){
 async function loadPrefStats(){
   const el = $('prefStats'); if (!el) return;
   try {
-    const st = await api('/api/retain/pref/stats');
+    const st = /** @type {AnyResp} */ (await api('/api/retain/pref/stats'));
     el.textContent = '已学习 ' + (st.total || 0) + ' 条（采纳 ' + (st.adopt || 0) + '，改选 ' + (st.changed || 0) + '）';
   } catch(e) { el.textContent = '统计加载失败'; }
   const profEl = $('prefProfile');
   if (!profEl) return;
   try {
-    const p = await api('/api/retain/pref/profile');
+    const p = /** @type {AnyResp} */ (await api('/api/retain/pref/profile'));
     const w = p.weights || {};
     profEl.textContent = '当前权重：质量 ' + Number(w.quality || 0).toFixed(2)
       + ' · 路径 ' + Number(w.path_tidy || 0).toFixed(2)
@@ -1151,7 +1151,7 @@ async function loadHealth(){
     // v3.10.3：首屏失败只影响列表，不把状态接口的其他信息一起丢掉。
     let r;
     try {
-      r = await api('/api/health/results?kind=' + encodeURIComponent(h.kind) + '&limit=' + HEALTH_PAGE);
+      r = /** @type {HealthItemsResp} */ (await api('/api/health/results?kind=' + encodeURIComponent(h.kind) + '&limit=' + HEALTH_PAGE));
     } catch(e) {
       toast('加载检测结果失败：' + e.message, 'err');
       renderHealth();
@@ -1195,8 +1195,8 @@ async function loadAllHealth(h){
     while (cursor < offsets.length) {
       const k = cursor++;
       try {
-        const r = await api('/api/health/results?kind=' + encodeURIComponent(h.kind) +
-          '&limit=' + HEALTH_PAGE + '&offset=' + offsets[k]);
+        const r = /** @type {HealthItemsResp} */ (await api('/api/health/results?kind=' + encodeURIComponent(h.kind) +
+          '&limit=' + HEALTH_PAGE + '&offset=' + offsets[k]));
         pages[k] = r.items || [];
       } catch(e) {
         // 单页失败只留空，其余页继续合并，避免一页抖动导致整页空白（v3.10.3）。
@@ -1237,8 +1237,8 @@ async function loadMoreHealth(){
       const rest = [];
       for (const off of h.missing) {
         try {
-          const r = await api('/api/health/results?kind=' + encodeURIComponent(h.kind) +
-            '&limit=' + HEALTH_PAGE + '&offset=' + off);
+          const r = /** @type {HealthItemsResp} */ (await api('/api/health/results?kind=' + encodeURIComponent(h.kind) +
+            '&limit=' + HEALTH_PAGE + '&offset=' + off));
           appendHealthItems(h, r.items || []);
           h.total = r.total || h.total;
         } catch(e) { rest.push(off); }
@@ -1248,8 +1248,8 @@ async function loadMoreHealth(){
       else toast(`还有 ${rest.length} 页加载失败，可再点一次`, 'err');
       return;
     }
-    const r = await api('/api/health/results?kind=' + encodeURIComponent(h.kind) +
-      '&limit=' + HEALTH_PAGE + '&offset=' + h.items.length);
+    const r = /** @type {HealthItemsResp} */ (await api('/api/health/results?kind=' + encodeURIComponent(h.kind) +
+      '&limit=' + HEALTH_PAGE + '&offset=' + h.items.length));
     const batch = r.items || [];
     appendHealthItems(h, batch);
     h.total = r.total || h.total;
@@ -1302,7 +1302,7 @@ function scheduleHealthPoll(){
     const fits = h.total > 0 && h.total <= HEALTH_PAGE;
     if (fits && now - (h.lastListSync || 0) >= 5000) {
       try {
-        const r = await api('/api/health/results?kind=' + encodeURIComponent(h.kind) + '&limit=' + h.total);
+        const r = /** @type {HealthItemsResp} */ (await api('/api/health/results?kind=' + encodeURIComponent(h.kind) + '&limit=' + h.total));
         h.items = r.items || [];
         h.total = r.total || h.total;
         h.lastListSync = now;

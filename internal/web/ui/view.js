@@ -311,7 +311,7 @@ function bindVolHover(){
       const p = el.dataset.path;
       S.volStats = S.volStats || {};
       if (!S.volStats[p]) {
-        try { S.volStats[p] = await api('/api/folder/stats?path=' + encodeURIComponent(p)); }
+        try { S.volStats[p] = /** @type {FolderStatsResp} */ (await api('/api/folder/stats?path=' + encodeURIComponent(p))); }
         catch(e) { S.volStats[p] = {error: true}; }
       }
       showVolTip(el, p, S.volStats[p]);
@@ -1020,7 +1020,7 @@ function renderOpLog(){
 }
 
 function opLogBody(){
-  const st = S.opLog || { items:[], total:0, page:1, pageSize:50 };
+  const st = S.opLog;
   const items = st.items || [];
   const actions = ['trash_add','trash_restore','trash_delete','trash_empty','login_ok','login_fail','auth_denied','settings_change','scan_start'];
   const rows = items.map(r => {
@@ -1117,7 +1117,7 @@ function snapStateMeta(state){
 }
 
 function opSnapBody(){
-  const st = S.opSnap || { items:[], total:0, page:1, pageSize:20 };
+  const st = S.opSnap;
   const items = st.items || [];
   const kinds = ['rename','trash','trim','health','transcode','cleanup','import'];
   const rows = items.map(s => {
@@ -1485,7 +1485,7 @@ function reportMode(){
 function reportBody(){
   // v3.10.10（第六轮 P1-2）：导出/HTML 报告以前只带 min_size，最大体积、日期、扩展名
   // 筛选全丢，用户以为导出的是筛过的结果，实际导出全库。这里补齐后端已支持的字段。
-  const lf = S.listFilter || {};
+  const lf = S.listFilter;
   return {
     mode: reportMode(),
     marked: markedPaths(),

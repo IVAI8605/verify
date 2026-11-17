@@ -1058,7 +1058,7 @@ function closeDirPicker(){ $('dirModal').classList.remove('show'); S.dir = null;
 async function loadDir(path){
   const d = S.dir; if (!d) return;
   try {
-    const r = await api('/api/fs/list?path=' + encodeURIComponent(path || ''));
+    const r = /** @type {FilesResp} */ (await api('/api/fs/list?path=' + encodeURIComponent(path || '')));
     d.path = r.path || '';
     d.listing = r;
     renderDirPicker();

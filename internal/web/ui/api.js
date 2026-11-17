@@ -72,8 +72,8 @@ async function ensureAssistGroups(){
           url = '/api/groups?' + params.toString();
         }
         const r = /** @type {GroupsResp} */ (await api(url));
-        const list = r.groups || [];
-        out.push(...list); total = Number(r.total || 0);
+        const list = r.groups;
+        out.push(...list); total = Number(r.total);
         if (out.length >= total || !list.length || out.length >= ASSIST_MAX_GROUPS) break;
       }
       if (S.tab === tab) {
@@ -453,7 +453,7 @@ async function ensureIntroStats(force){
   if (!force && S.introStatsAt && now - S.introStatsAt < 30000) return;
   try {
     const n = Math.min(300, Math.max(1, Number(S.introN || 10)));
-    const r = /** @type {GroupsResp} */ (await api('/api/groups/intro?n=' + n + '&page=1&page_size=1'));
+    const r = /** @type {IntroGroupsResp} */ (await api('/api/groups/intro?n=' + n + '&page=1&page_size=1'));
     S.introAnalyzed = Number(r.analyzed || 0);
     S.introPending = Number(r.pending || 0);
     S.introStatsAt = Date.now();
@@ -552,9 +552,9 @@ async function loadRuleChunk(page, reset, quiet){
   // 「还没加载」误当成「确实是 0 组」显示出来
   if (reset) { S.groups = []; S.total = null; S.loadedPage = 1; S.hasMore = false; S.vlist = null; renderGroups(); }
   try {
-    const r = await api('/api/rule-search/results?' + p.toString());
+    const r = /** @type {SnapshotGroupsResp} */ (await api('/api/rule-search/results?' + p.toString()));
     if (gen !== S.ruleGen) return; // 已被更新的一次切换取代，旧数据不落地
-    const list = r.groups || [];
+    const list = r.groups;
     if (reset) S.groups = list;
     else {
       const seen = new Set(S.groups.map(g => g.key));
@@ -589,7 +589,7 @@ async function loadFacets(){
     const p = new URLSearchParams({ type: S.resultType || 'all' });
     if (S.dirFilter) p.set('dir', S.dirFilter);
     if (S.listFilter.q) p.set('q', S.listFilter.q);
-    const f = await api('/api/rule-search/facets?' + p.toString());
+    const f = /** @type {SnapshotFacetsResp} */ (await api('/api/rule-search/facets?' + p.toString()));
     if (gen !== S.ruleGen) return;
     S.facets = {
       types: Array.isArray(f && f.types) ? f.types : [],
@@ -708,8 +708,8 @@ async function loadVideo(){
 
 async function loadVideoFailures(){
   try {
-    const fr = await api('/api/video/failures');
-    S.videoFails = fr.items || [];
+    const fr = /** @type {ItemsTotalResp} */ (await api('/api/video/failures'));
+    S.videoFails = fr.items;
   } catch(e) { S.videoFails = []; }
 }
 
@@ -827,8 +827,8 @@ async function loadPhoto(){
   S.photoSel = S.photoSel || new Set();
   S.loading = true; renderPhoto();
   try {
-    const r = await api('/api/groups/photo?sort=' + encodeURIComponent(S.rpSort.photo||'waste') + '&order=' + encodeURIComponent(S.rpSortOrder.photo||'desc'));
-    S.photoGroups = r.groups || [];
+    const r = /** @type {GroupsMediaResp} */ (await api('/api/groups/photo?sort=' + encodeURIComponent(S.rpSort.photo||'waste') + '&order=' + encodeURIComponent(S.rpSortOrder.photo||'desc')));
+    S.photoGroups = r.groups;
     S.photoSel = new Set();
     S.photoThreshold = r.threshold;
   } catch(e) { toast(e.message, 'err'); S.photoGroups = []; }
@@ -904,7 +904,7 @@ async function batchThumbs(paths, label){
   await Promise.all(Array.from({ length: CONC }, async () => {
     while (i < vids.length) {
       const p = vids[i++];
-      try { await api('/api/thumb?path=' + encodeURIComponent(p) + '&t=1'); S.thumbJob.done++; }
+      try { /** @type {AnyResp} */ (await api('/api/thumb?path=' + encodeURIComponent(p) + '&t=1')); S.thumbJob.done++; }
       catch(e) { S.thumbJob.fail++; }
       if ((S.thumbJob.done + S.thumbJob.fail) % 3 === 0) paintThumbProg();
     }
@@ -922,8 +922,8 @@ async function loadAudio(){
   S.audioSel = S.audioSel || new Set();
   S.loading = true; renderAudio();
   try {
-    const r = await api('/api/groups/audio?sort=' + encodeURIComponent(S.rpSort.audio||'waste') + '&order=' + encodeURIComponent(S.rpSortOrder.audio||'desc') + advFilterParams());
-    S.audioGroups = r.groups || [];
+    const r = /** @type {GroupsMediaResp} */ (await api('/api/groups/audio?sort=' + encodeURIComponent(S.rpSort.audio||'waste') + '&order=' + encodeURIComponent(S.rpSortOrder.audio||'desc') + advFilterParams()));
+    S.audioGroups = r.groups;
     S.audioSel = new Set();
   } catch(e) { toast(e.message, 'err'); S.audioGroups = []; }
   finally { S.loading = false; renderAudio(); }
@@ -933,9 +933,9 @@ async function loadFolder(){
   S.folderSel = S.folderSel || new Set();
   S.loading = true; renderFolder();
   try {
-    const r = await api('/api/groups/folder?sort=' + encodeURIComponent(S.rpSort.folder||'waste') + '&order=' + encodeURIComponent(S.rpSortOrder.folder||'desc'));
+    const r = /** @type {{groups: StoreGroup[], total: number, disabled?: boolean}} */ (await api('/api/groups/folder?sort=' + encodeURIComponent(S.rpSort.folder||'waste') + '&order=' + encodeURIComponent(S.rpSortOrder.folder||'desc')));
     S.folderDisabled = !!r.disabled;
-    S.folderGroups = r.disabled ? [] : (r.groups || []);
+    S.folderGroups = r.disabled ? [] : r.groups;
     S.folderSel = new Set();
     if (!r.disabled) {
       rpDefaultFold('folder', S.folderGroups); // v1.24.0：重复文件夹组默认折叠
@@ -1057,8 +1057,8 @@ async function loadBig(){
     // 画面比例是服务端筛选条件；漏传会让下拉框看似生效、列表却不变（P-03）
     const q = new URLSearchParams({ limit: '100', order: S.bigOrder || 'big' });
     if (S.bigCrop) q.set('crop', S.bigCrop);
-    const r = await api('/api/big?' + q.toString());
-    S.bigFiles = r.files || [];
+    const r = /** @type {FilesLimitOrderResp} */ (await api('/api/big?' + q.toString()));
+    S.bigFiles = r.files;
     S.bigSel = new Set();
   } catch(e) { toast(e.message, 'err'); S.bigFiles = []; }
   finally { S.loading = false; renderBig(); }
@@ -1440,7 +1440,7 @@ async function loadOpLog(){
   p.set('page', String(st.page || 1));
   p.set('page_size', String(st.pageSize || 50));
   try {
-    const r = await api('/api/oplog?' + p.toString());
+    const r = /** @type {OplogListResp} */ (await api('/api/oplog?' + p.toString()));
     st.items = r.items || []; st.total = r.total || 0;
     st.page = r.page || 1; st.pageSize = r.page_size || 50;
   } catch(e) { toast(e.message, 'err'); st.items = []; st.total = 0; }
@@ -1467,8 +1467,8 @@ async function loadOpSnapshots(){
     if (st.kind) p.set('kind', st.kind);
     if (st.result) p.set('result', st.result);
     if (st.keyword) p.set('keyword', st.keyword);
-    const r = await api('/api/op-snapshots?' + p.toString());
-    st.items = r.items || r.snapshots || [];
+    const r = /** @type {OpSnapshotsResp} */ (await api('/api/op-snapshots?' + p.toString()));
+    st.items = r.snapshots || [];
     st.total = Number(r.total || 0);
     st.page = Number(r.page || st.page || 1);
     st.error = '';
@@ -1482,7 +1482,7 @@ async function exportOpLog(){
   const p = opLogParams();
   try {
     // v3.10.7：改走 api()，让写请求带上 CSRF 校验所需的 X-Requested-With
-    const r = await api('/api/oplog/export?' + p.toString(), { method:'POST' });
+    const r = /** @type {AnyResp} */ (await api('/api/oplog/export?' + p.toString(), { method:'POST' }));
     if (!r.ok) throw new Error('导出失败（' + r.status + '）');
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
@@ -1638,7 +1638,7 @@ async function loadMoreTrash(){
   if (!S.trashCursor || S.trashMoreLoading) return;
   S.trashMoreLoading = true;
   try {
-    const r = await api('/api/trash?limit=200&cursor=' + encodeURIComponent(S.trashCursor));
+    const r = /** @type {TrashListResp} */ (await api('/api/trash?limit=200&cursor=' + encodeURIComponent(S.trashCursor)));
     const seen = new Set((S.trash || []).map(t => t.id));
     const add = (r.items || []).filter(t => !seen.has(t.id));
     S.trash = (S.trash || []).concat(add);
@@ -1708,7 +1708,7 @@ async function doExport(format, scope){
       toast('仅标记行导出需要先勾选文件', 'err'); return;
     }
     // v3.10.7：改走 api()，让写请求带上 CSRF 校验所需的 X-Requested-With
-    const r = await api('/api/export', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const r = /** @type {AnyResp} */ (await api('/api/export', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }));
     if (!r.ok) { let m = '导出失败'; try { const j = await r.json(); m = j.error || m; } catch(e){} throw new Error(m); }
     const blob = await r.blob();
     // 优先用服务端给出的文件名（含格式标识），取不到再本地拼
@@ -1729,7 +1729,7 @@ async function doExport(format, scope){
 async function doReport(){
   try {
     // v3.10.7：改走 api()，让写请求带上 CSRF 校验所需的 X-Requested-With
-    const r = await api('/api/report', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(reportBody()) });
+    const r = /** @type {AnyResp} */ (await api('/api/report', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(reportBody()) }));
     if (!r.ok) { let m = '生成报告失败'; try { const j = await r.json(); m = j.error || m; } catch(e){} throw new Error(m); }
     const blob = await r.blob();
     const a = document.createElement('a');
@@ -2031,7 +2031,7 @@ async function loadFuzzy(){
   const fz = S.fuzzy;
   fz.loading = true; renderFuzzy();
   try {
-    const r = await api('/api/groups/fuzzy?near=' + (fz.near ? 1 : 0) + '&page=' + fz.page + '&page_size=20' + advFilterParams());
+    const r = /** @type {GroupsResp} */ (await api('/api/groups/fuzzy?near=' + (fz.near ? 1 : 0) + '&page=' + fz.page + '&page_size=20' + advFilterParams()));
     fz.groups = r.groups || [];
     fz.total = r.total || 0;
     fz.loading = false;
@@ -2048,7 +2048,7 @@ async function loadSemantic(){
   const fz = S.semantic;
   fz.loading = true; renderSemantic();
   try {
-    const r = await api('/api/groups/semantic?page=' + fz.page + '&page_size=20' + advFilterParams());
+    const r = /** @type {GroupsResp} */ (await api('/api/groups/semantic?page=' + fz.page + '&page_size=20' + advFilterParams()));
     fz.groups = r.groups || [];
     fz.total = r.total || 0;
     fz.loading = false;
@@ -2444,7 +2444,7 @@ async function doSearch(){
   searchResetSelection(st);
   st.items = []; st.nextCursor = '';
   try {
-    const r = await api('/api/search?' + searchParams(st, '').toString());
+    const r = /** @type {SearchSQLResp} */ (await api('/api/search?' + searchParams(st, '').toString()));
     if (st.reqId !== reqId) return; // 只渲染最新一次请求，防止乱序覆盖
     st.items = r.items || []; st.total = Number(r.total || 0); st.took = Number(r.took_ms || 0);
     st.nextCursor = r.next_cursor || '';
@@ -2465,7 +2465,7 @@ async function loadMoreSearch(){
   const reqId = st.reqId;
   renderSearchWindow();
   try {
-    const r = await api('/api/search?' + searchParams(st, st.nextCursor).toString());
+    const r = /** @type {SearchSQLResp} */ (await api('/api/search?' + searchParams(st, st.nextCursor).toString()));
     if (st.reqId !== reqId) return;
     const seen = new Set(st.items.map(x => x.path));
     (r.items || []).forEach(it => { if (!seen.has(it.path)) { seen.add(it.path); st.items.push(it); } });

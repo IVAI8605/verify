@@ -1326,7 +1326,7 @@ document.addEventListener('click', async (ev) => {
     // v3.9.6 修 S-29：原来 `<a download>` 无法检测 HTTP 成败，改成 fetch 能读 response.status
     try {
       toast('正在生成指纹包…');
-      const r = await api('/api/sync/export'); // api() 已自动处理 401→showLogin
+      const r = /** @type {AnyResp} */ (await api('/api/sync/export')); // api() 已自动处理 401→showLogin
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1340,7 +1340,7 @@ document.addEventListener('click', async (ev) => {
   } else if (act === 'sync-peer-del') {
     if (!confirm('删除这台设备的指纹包？删除后跨设备标记会消失。')) return;
     try {
-      await api('/api/sync/peers?machine=' + encodeURIComponent(el.dataset.machine), { method: 'DELETE' });
+      /** @type {SyncPeersResp} */ (await api('/api/sync/peers?machine=' + encodeURIComponent(el.dataset.machine), { method: 'DELETE' }));
       toast('已删除', 'ok');
       loadSyncPeers();
     } catch(e) { toast(e.message, 'err'); }

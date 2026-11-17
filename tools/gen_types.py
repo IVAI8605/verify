@@ -61,6 +61,17 @@ interface ApiError {
 interface ApiOk {
   ok: boolean;
 }
+
+/**
+ * 尚未纳入契约的响应用它占位。
+ *
+ * 这些接口的返回体形态不稳定（导出文件、缩略图二进制、诊断信息等），
+ * 或仍在改造中。用 AnyResp 标注等于「此处不做字段级检查」——
+ * 等对应接口纳入契约后，把它换成具体类型。
+ */
+interface AnyResp {
+  [key: string]: any;
+}
 """
 
 # 除 contracts*.go 外，还要从这些文件里取类型（前端直接消费它们的 JSON 形态）
@@ -92,6 +103,11 @@ def ts_name_of(go_name):
     return go_name[0].upper() + go_name[1:]
 
 
+def ts_type_name(go_name):
+    """struct 名 → TS 类型名（引用而非展开）。"""
+    return ts_name_of(go_name)
+
+
 def parse_go_types():
     """解析 contracts*.go 与 store 的相关 struct。
 
@@ -115,25 +131,50 @@ def parse_go_types():
             body = m.group(2)
             fields = []
             for line in body.split('\n'):
-                fm = re.match(
-                    r'\s*(\w+)\s+([\w\[\]\*\.]+)\s+`json:"([^"]+)"`', line)
-                if not fm:
+                line_s = line.strip()
+                if not line_s:
                     continue
-                go_field, go_type, tag = fm.group(1), fm.group(2), fm.group(3)
-                parts = tag.split(',')
-                json_key = parts[0]
-                omitempty = 'omitempty' in parts
-                fields.append((go_field, json_key, go_type, omitempty))
+                fm = re.match(
+                    r'(\w+)\s+([\w\[\]\*\.]+)\s+`json:"([^"]+)"`', line_s)
+                if fm:
+                    go_field, go_type, tag = fm.group(1), fm.group(2), fm.group(3)
+                    parts = tag.split(',')
+                    json_key = parts[0]
+                    omitempty = 'omitempty' in parts
+                    fields.append((go_field, json_key, go_type, omitempty))
+                    continue
+                # 内嵌结构体：单独一行、只有类型名、没有 json tag。
+                # Go 的匿名嵌入在 JSON 里会把字段平铺到同一层，
+                # TS 侧用 `interface X extends Base` 表达。
+                em = re.match(r'([A-Z]\w*)$', line_s)
+                if em:
+                    fields.append(('__embed__', '', em.group(1), False))
             if fields:
                 defs[name] = fields
     return defs
 
 
+def strip_pkg(go_type):
+    """去掉包前缀：[]store.Group → []Group，*store.FileRow → *FileRow。"""
+    go_type = go_type.strip()
+    if go_type.startswith('*'):
+        return '*' + strip_pkg(go_type[1:])
+    if go_type.startswith('[]'):
+        return '[]' + strip_pkg(go_type[2:])
+    if '.' in go_type:
+        return go_type.rsplit('.', 1)[1]
+    return go_type
+
+
 def ts_type(go_type, defs, seen=None):
-    """把 Go 类型映射成 TS 类型。"""
+    """把 Go 类型映射成 TS 类型。
+
+    已知 struct 用它的 TS 名（而不是展开成内联对象）：
+    展开会让 types.d.ts 变得很长，且前端无法复用同一个类型。
+    """
     if seen is None:
         seen = set()
-    go_type = go_type.strip()
+    go_type = strip_pkg(go_type)
     if go_type == 'string':
         return 'string'
     if go_type in ('bool',):
@@ -145,12 +186,12 @@ def ts_type(go_type, defs, seen=None):
     if go_type.startswith('[]'):
         inner = go_type[2:]
         if inner in defs and inner not in seen:
-            return expand_struct(inner, defs, seen | {inner})
+            return ts_type_name(inner) + '[]'
         return ts_type(inner, defs, seen)
     if go_type.startswith('*'):
         return 'any'
     if go_type in defs and go_type not in seen:
-        return expand_struct(go_type, defs, seen | {go_type})
+        return ts_type_name(go_type)
     return 'any'
 
 
@@ -164,6 +205,33 @@ def expand_struct(name, defs, seen):
     if not parts:
         return 'any'
     return "{ " + "; ".join(parts) + " }"
+
+
+def _emit_interface(lines, ts_name, fields, defs):
+    """输出一个 TS interface。
+
+    内嵌结构体（Go 的匿名嵌入，字段在 JSON 里平铺）用 `extends` 表达：
+        interface StoreFileRow extends StoreMediaMeta { ... }
+    这样既保持字段平铺语义，也不用把子结构字段抄一遍。
+    """
+    embeds = [f[2] for f in fields if f[0] == '__embed__']
+    real = [f for f in fields if f[0] != '__embed__']
+    ext = ""
+    if embeds:
+        names = []
+        for e in embeds:
+            if e in EXTRA_NAMES:
+                names.append("Store" + e)
+            else:
+                names.append(ts_name_of(e))
+        ext = " extends " + ", ".join(names)
+    lines.append(f"interface {ts_name}{ext} {{")
+    for go_field, json_key, go_type, omitempty in real:
+        t = ts_type(go_type, defs)
+        opt = '?' if omitempty else ''
+        lines.append(f"  {json_key}{opt}: {t};")
+    lines.append("}")
+    lines.append("")
 
 
 def main():
@@ -181,13 +249,7 @@ def main():
         fields = defs[name]
         ts_name = ts_name_of(name)
         lines.append(f"/** 后端 {name}（{len(fields)} 个字段）。 */")
-        lines.append(f"interface {ts_name} {{")
-        for go_field, json_key, go_type, omitempty in fields:
-            t = ts_type(go_type, defs)
-            opt = '?' if omitempty else ''
-            lines.append(f"  {json_key}{opt}: {t};")
-        lines.append("}")
-        lines.append("")
+        _emit_interface(lines, ts_name, fields, defs)
 
     # store 里的类型用 Store 前缀，避免与前端手写的类型重名
     lines.append("\n// ── 数据行类型（由 internal/store 生成）──────────────────────────────\n")
@@ -196,13 +258,7 @@ def main():
             continue
         fields = defs[name]
         lines.append(f"/** 后端 store.{name}（{len(fields)} 个字段）。 */")
-        lines.append(f"interface Store{name} {{")
-        for go_field, json_key, go_type, omitempty in fields:
-            t = ts_type(go_type, defs)
-            opt = '?' if omitempty else ''
-            lines.append(f"  {json_key}{opt}: {t};")
-        lines.append("}")
-        lines.append("")
+        _emit_interface(lines, "Store" + name, fields, defs)
 
     content = "\n".join(lines)
 

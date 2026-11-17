@@ -26,6 +26,17 @@ interface ApiOk {
   ok: boolean;
 }
 
+/**
+ * 尚未纳入契约的响应用它占位。
+ *
+ * 这些接口的返回体形态不稳定（导出文件、缩略图二进制、诊断信息等），
+ * 或仍在改造中。用 AnyResp 标注等于「此处不做字段级检查」——
+ * 等对应接口纳入契约后，把它换成具体类型。
+ */
+interface AnyResp {
+  [key: string]: any;
+}
+
 
 // ── 后端响应契约（由 contracts*.go 生成）──────────────────────────────
 
@@ -41,6 +52,14 @@ interface Counts {
   trash_files: number;
   trash_bytes: number;
   videos: number;
+}
+
+/** 后端 IntroFP（1 个字段）。 */
+interface IntroFP extends StoreMediaMeta {
+}
+
+/** 后端 IntroResult（1 个字段）。 */
+interface IntroResult extends StoreMediaMeta {
 }
 
 /** 后端 TrimLogEntry（14 个字段）。 */
@@ -61,6 +80,10 @@ interface TrimLogEntry {
   created_at: number;
 }
 
+/** 后端 VideoFP（1 个字段）。 */
+interface VideoFP extends StoreMediaMeta {
+}
+
 /** 后端 VideoFailure（8 个字段）。 */
 interface VideoFailure {
   id: number;
@@ -71,6 +94,10 @@ interface VideoFailure {
   error: string;
   at: number;
   tries: number;
+}
+
+/** 后端 VideoResult（1 个字段）。 */
+interface VideoResult extends StoreMediaMeta {
 }
 
 /** 后端 actionItemsResponse（2 个字段）。 */
@@ -157,7 +184,7 @@ interface FailedReasonsResp {
 
 /** 后端 filesLimitOrderResponse（3 个字段）。 */
 interface FilesLimitOrderResp {
-  files: any;
+  files: StoreFileRow[];
   limit: number;
   order: string;
 }
@@ -182,21 +209,21 @@ interface FolderStatsResp {
 
 /** 后端 groupsDisabledResponse（3 个字段）。 */
 interface GroupsDisabledResp {
-  groups: any;
+  groups: StoreGroup[];
   total: number;
   disabled: boolean;
 }
 
 /** 后端 groupsMediaResponse（3 个字段）。 */
 interface GroupsMediaResp {
-  groups: any;
+  groups: StoreGroup[];
   total: number;
   threshold: any;
 }
 
 /** 后端 groupsResponse（4 个字段）。 */
 interface GroupsResp {
-  groups: any;
+  groups: StoreGroup[];
   total: number;
   page: number;
   page_size: number;
@@ -204,7 +231,7 @@ interface GroupsResp {
 
 /** 后端 groupsSimpleResponse（2 个字段）。 */
 interface GroupsSimpleResp {
-  groups: any;
+  groups: StoreGroup[];
   total: number;
 }
 
@@ -262,7 +289,7 @@ interface ImportSessionsResp {
 
 /** 后端 introGroupsResponse（7 个字段）。 */
 interface IntroGroupsResp {
-  groups: any;
+  groups: StoreGroup[];
   total: number;
   page: number;
   page_size: number;
@@ -297,7 +324,7 @@ interface LabeledRemainingResp {
 
 /** 后端 matchModeDisabledResponse（4 个字段）。 */
 interface MatchModeDisabledResp {
-  groups: any;
+  groups: StoreGroup[];
   total: number;
   disabled: boolean;
   reason?: string;
@@ -616,7 +643,7 @@ interface SnapshotFacetsResp {
 
 /** 后端 snapshotGroupsResponse（5 个字段）。 */
 interface SnapshotGroupsResp {
-  groups: any;
+  groups: StoreGroup[];
   total: number;
   page: number;
   page_size: number;
@@ -689,7 +716,7 @@ interface TagSavedWarningResp {
 
 /** 后端 tagsResponse（1 个字段）。 */
 interface TagsResp {
-  tags: any;
+  tags: StoreVideoTag[];
 }
 
 /** 后端 tasksResponse（2 个字段）。 */
@@ -723,7 +750,7 @@ interface TranscodeTasksResp {
 
 /** 后端 trashListResponse（5 个字段）。 */
 interface TrashListResp {
-  items: any;
+  items: StoreTrashRow[];
   total: number;
   returned: number;
   has_more: boolean;
@@ -744,7 +771,7 @@ interface TrashRemovedResp {
 
 /** 后端 trimLogResponse（1 个字段）。 */
 interface TrimLogResp {
-  log: any;
+  log: TrimLogEntry[];
 }
 
 /** 后端 trimProbeResponse（3 个字段）。 */
@@ -764,7 +791,7 @@ interface VideoTagSavedResp {
 
 /** 后端 videoTagsResponse（1 个字段）。 */
 interface VideoTagsResp {
-  tags: any;
+  tags: StoreVideoTag[];
 }
 
 /** 后端 watchRestartResponse（5 个字段）。 */
@@ -779,8 +806,8 @@ interface WatchRestartResp {
 
 // ── 数据行类型（由 internal/store 生成）──────────────────────────────
 
-/** 后端 store.FileRow（19 个字段）。 */
-interface StoreFileRow {
+/** 后端 store.FileRow（20 个字段）。 */
+interface StoreFileRow extends StoreMediaMeta {
   id: number;
   path: string;
   volume: string;
@@ -798,7 +825,7 @@ interface StoreFileRow {
   duration?: number;
   thumb?: string;
   img_hash?: string;
-  tags?: { name: string; value: string };
+  tags?: StoreTagValue[];
   peer?: string;
 }
 
@@ -812,7 +839,7 @@ interface StoreGroup {
   total_size: number;
   waste: number;
   similarity?: number;
-  files: { id: number; path: string; volume: string; name: string; size: number; alloc?: number; mtime: number; ctime: number; nlink: number; inode: number; dev?: number; ext: string; quick?: string; hash?: string; duration?: number; thumb?: string; img_hash?: string; tags?: { name: string; value: string }; peer?: string };
+  files: StoreFileRow[];
 }
 
 /** 后端 store.MediaMeta（5 个字段）。 */
