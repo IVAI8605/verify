@@ -92,8 +92,9 @@ func TestTrashListIsReadOnly(t *testing.T) {
 	}
 }
 
-// TestTrashLegacyStillHeals 旧 GET /api/trash 的清理行为不能因为新增只读接口而回退。
-func TestTrashLegacyStillHeals(t *testing.T) {
+// TestTrashLegacyIsReadOnly 回归 v4.0.1（安全审查 问题3）：旧 GET /api/trash 已改为纯只读，
+// 不再顺手清理幽灵行——幽灵行清理改到引擎启动的 HealTrashMaintenance。
+func TestTrashLegacyIsReadOnly(t *testing.T) {
 	s, st, root := newTrashAPIServer(t)
 	seedTrashAPI(t, st, root, 2)
 	seedGhostTrash(t, st, root)
@@ -106,11 +107,11 @@ func TestTrashLegacyStillHeals(t *testing.T) {
 	if err := json.Unmarshal(body["items"], &items); err != nil {
 		t.Fatalf("items 必须是数组：%v", err)
 	}
-	if len(items) != 2 {
-		t.Fatalf("旧接口应清理幽灵行后返回 2 条，实际 %d", len(items))
+	if len(items) != 3 {
+		t.Fatalf("旧接口应原样返回全部 3 条（含幽灵行），实际 %d", len(items))
 	}
-	if got := countQuarantine(t, st); got != 2 {
-		t.Fatalf("旧接口应删掉幽灵行，库内应为 2 条，实际 %d", got)
+	if got := countQuarantine(t, st); got != 3 {
+		t.Fatalf("旧接口不得清理幽灵行，库内应仍为 3 条，实际 %d", got)
 	}
 }
 

@@ -217,6 +217,8 @@ func main() {
 	bus := engine.NewBus()
 	eng := engine.New(st, cfgMgr, bus, *appDest)
 	defer eng.Close()
+	// v4.0.1（安全审查 问题3）：GET 路径不再写库，幽灵隔离行改到启动时在写锁内清理一次。
+	eng.StartTrashMaintenance()
 
 	if r := eng.RunnerSnapshot(); !r.Available() {
 		applog.Warn("未找到系统 ffmpeg/ffprobe，视频相似检测不可用")

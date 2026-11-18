@@ -57,8 +57,9 @@ func (s *Server) handleTrashExport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
-	// v3.10.10（第五轮 P2-1）：导出前同样清掉幽灵行，导出清单里不再出现空条目。
-	all = s.e.HealTrashRows(r.Context(), all)
+	// v4.0.1（安全审查 问题3）：导出是 GET 只读路径，不再顺手清理幽灵行（那是写库）。
+	// 幽灵行会进入导出清单，但 writeTrashZip 里 ResolveTrashPath 校验失败会跳过并记入
+	// _skipped.txt，不会把不存在的文件打进备份包。幽灵行由引擎启动时统一清理。
 	rows := selectTrashRows(all, ids, wantAll)
 	if len(rows) == 0 {
 		writeJSON(w, http.StatusNotFound, errorResponse{Error: "没有可导出的隔离区条目"})

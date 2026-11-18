@@ -1203,6 +1203,34 @@ func fileInfoOf(path, root string, info fs.FileInfo) store.FileInfo {
 	}
 }
 
+// hashSnapshotStillValid 复核文件在「选中→落库」窗口内是否未被改动（v4.0.1 安全审查 问题4）。
+// 内容被替换时 mtime 可被回拨，ctime 由内核维护不能伪造。磁盘能给出 ctime 时，库里 ctime
+// 必须与之相等——库里 ctime=0（旧行/未采集）同样判为不一致，即「放弃乐观写入」；
+// 仅当磁盘也拿不到 ctime（个别 FUSE 挂载）时才退回 size+mtime。返回 false 则不得落库。
+func hashSnapshotStillValid(f store.FileRow) bool {
+	fi, err := os.Lstat(f.Path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	if fi.Size() != f.Size || fi.ModTime().UnixNano() != f.Mtime {
+		return false
+	}
+	if cur, ok := fileCtime(fi); ok && cur > 0 {
+		if cur != f.Ctime {
+			return false
+		}
+	}
+	return true
+}
+
+// fileCtime 取 inode 变更时间（纳秒）；平台不提供 syscall.Stat_t 时 ok=false。
+func fileCtime(fi fs.FileInfo) (int64, bool) {
+	if s, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return s.Ctim.Sec*1e9 + s.Ctim.Nsec, true
+	}
+	return 0, false
+}
+
 // stageMeter 统计单个扫描阶段的文件数、字节数与耗时（v3.10.3）。
 //
 // 以前只有整次扫描的总用时，看不出枚举、预哈希、全量、视频、片头各占多少，
@@ -1454,6 +1482,19 @@ outerHash:
 				// v3.10.3：失败不再写 'ERR'。旧写法会让候选查询的 IS NULL 永远
 				// 匹配不到它，文件再也不会重算；保留 NULL + 本轮 path 续扫，
 				// 既不会在本次扫描里反复选中，也能在下一轮自动重试。
+				n := atomic.AddInt64(done, 1)
+				e.updateState(func(s *State) {
+					s.Done = n
+					s.Total = total
+					s.Current = f.Path
+				})
+				return
+			}
+			// v4.0.1（安全审查 问题4）：落库前重新 Lstat 复核一次。文件若在「选中→落库」窗口内
+			// 被换成同大小、且 mtime 被回拨的内容，旧哈希不能写到新内容上，否则候选查询会把
+			// 两个不同内容的文件判成同一组，进而被误删。复核不通过就跳过写库，留 NULL 下轮重算。
+			if !hashSnapshotStillValid(f) {
+				applog.Warn("哈希落库前复核发现文件已改动，跳过写入（下轮重算）：%s", f.Path)
 				n := atomic.AddInt64(done, 1)
 				e.updateState(func(s *State) {
 					s.Done = n

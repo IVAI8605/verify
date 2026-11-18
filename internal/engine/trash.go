@@ -41,6 +41,9 @@ type TrashResult struct {
 	Moved  []string `json:"moved"`
 	Failed []string `json:"failed"`
 	Errors []string `json:"errors"`
+	// Unprocessed 是因请求取消而未处理到的条目数（v4.0.1 安全审查 问题2）：
+	// 这些条目既没动过、也不算失败，单独计数，避免被误报成「索引中不存在」。
+	Unprocessed int `json:"unprocessed,omitempty"`
 	// Conflict 是闸门拒绝原因（v3.25.2 P3-5）：非空表示本次没有删除任何文件。
 	Conflict string `json:"conflict,omitempty"`
 	// Reconcile 是操作后对账结果（v3.10.5）：有差异时前端会列路径并给出下一步建议。
@@ -52,6 +55,8 @@ type RestoreResult struct {
 	Restored []string `json:"restored"`
 	Failed   []string `json:"failed"`
 	Errors   []string `json:"errors"`
+	// Unprocessed 是请求取消时剩余的条目数（v4.0.1 安全审查 问题2），不算失败。
+	Unprocessed int `json:"unprocessed,omitempty"`
 	// Conflict 是闸门拒绝原因（v3.25.2 P3-5）：非空表示一个文件都没恢复。
 	Conflict string `json:"conflict,omitempty"`
 }
@@ -275,7 +280,16 @@ func (e *Engine) trashFilesLocked(ctx context.Context, paths []string, groups []
 	// v3.10.5：动手前给本次涉及的文件拍快照，结束后核对磁盘实际状态。
 	snap := e.beginOpSnapshot(ctx, "trash", paths)
 	now := time.Now()
-	for _, p := range paths {
+	for i, p := range paths {
+		// v4.0.1（安全审查 问题2）：请求被取消（用户关页面/点停止）时，剩余条目根本没处理，
+		// 不能继续调 checkTrashPath（它会因 GetFileByPath 失败而误报「索引中不存在该文件」）。
+		// 这里主动中断，把剩余项按「未处理」计数，并 SkipPending 避免事后对账误报。
+		if ctx.Err() != nil {
+			res.Unprocessed = len(paths) - i
+			res.Errors = append(res.Errors, fmt.Sprintf("操作已取消，剩余 %d 个未处理", res.Unprocessed))
+			snap.SkipPending("操作已取消，未处理")
+			break
+		}
 		p = filepath.Clean(p)
 		if reason := e.protectedReason(p); reason != "" {
 			// 预检之后配置可能变化，执行前必须再拦一次
@@ -312,14 +326,12 @@ func (e *Engine) trashFilesLocked(ctx context.Context, paths []string, groups []
 			continue
 		}
 		if err := e.st.AddTrash(ctx, p, dst, vol, row.Hash, groupKeyForPath(groups, p), "duplicate", row.Size); err != nil {
-			// 回滚移动；回滚也失败时文件已在隔离区却没有记录，必须进差异清单。
-			if rbErr := moveFile(dst, p); rbErr != nil {
-				snap.MarkProblem(p, opExpectRelocated, dst, "记录隔离区失败且回滚失败，文件可能已在隔离区但没有恢复记录："+rbErr.Error())
-			} else {
-				snap.Skip(p, "记录回收站失败，已回滚："+err.Error())
-			}
+			// v4.0.1（安全审查 问题5）：回滚前先判原父目录是否还在。用户可能已把目录删掉，
+			// moveFile 里的 MkdirAll 会把它重新建出来，等于悄悄撤销了用户的删除。原目录不在
+			// 就不再搬回，文件留在隔离区但无恢复记录，进差异清单交人工处理。
+			_, note := e.rollbackTrashRecord(snap, p, dst, err)
 			res.Failed = append(res.Failed, p)
-			res.Errors = append(res.Errors, "记录回收站失败: "+err.Error())
+			res.Errors = append(res.Errors, "记录回收站失败: "+err.Error()+"（"+note+"）")
 			continue
 		}
 		e.dropIndexPath(ctx, snap, p)
@@ -328,6 +340,9 @@ func (e *Engine) trashFilesLocked(ctx context.Context, paths []string, groups []
 	}
 	entry := oplog.New("trash_add")
 	entry.Summary = fmt.Sprintf("移入隔离区 %d 个文件，失败 %d 个", len(res.Moved), len(res.Failed))
+	if res.Unprocessed > 0 {
+		entry.Summary += fmt.Sprintf("，取消未处理 %d 个", res.Unprocessed)
+	}
 	entry.TargetCount = len(paths)
 	for _, p := range res.Moved {
 		entry.Details = append(entry.Details, oplog.Detail{Path: p})
@@ -349,6 +364,27 @@ func (e *Engine) trashFilesLocked(ctx context.Context, paths []string, groups []
 	e.Bus.Publish(Event{Type: "update"})
 	res.Reconcile = e.finishOpSnapshot(snap)
 	return res, nil
+}
+
+// rollbackTrashRecord 在 AddTrash 失败后尝试把已移入隔离区的文件搬回原路径。
+// 返回 restored=true 表示已回滚；false 表示文件仍留在隔离区，note 说明原因。
+//
+// v4.0.1（安全审查 问题5）：回滚前先判原父目录是否存在。用户可能在隔离后又删掉了原目录，
+// 此时若直接 moveFile(dst, p)，其内部的 os.MkdirAll 会把已删除的目录重新创建出来，
+// 相当于悄悄撤销了用户的一次删除。原目录不在就只记对账问题（record_lost），不重建目录。
+func (e *Engine) rollbackTrashRecord(snap *OpSnapshot, p, dst string, addErr error) (restored bool, note string) {
+	if fi, err := os.Lstat(filepath.Dir(p)); err != nil || !fi.IsDir() {
+		snap.MarkProblem(p, opExpectRelocated, dst,
+			"记录隔离区失败且原目录已不存在，文件留在隔离区但无恢复记录，请人工核对："+addErr.Error())
+		return false, "原目录已不存在，未回滚"
+	}
+	if rbErr := moveFile(dst, p); rbErr != nil {
+		snap.MarkProblem(p, opExpectRelocated, dst,
+			"记录隔离区失败且回滚失败，文件可能已在隔离区但没有恢复记录："+rbErr.Error())
+		return false, "回滚失败：" + rbErr.Error()
+	}
+	snap.Skip(p, "记录回收站失败，已回滚："+addErr.Error())
+	return true, "已回滚"
 }
 
 func (e *Engine) buildTrashPath(vol, orig string, now time.Time) (string, error) {
@@ -665,7 +701,13 @@ func (e *Engine) restoreLocked(ctx context.Context, ids []int64) *RestoreResult 
 	defer cancel()
 	res := &RestoreResult{}
 	var details []oplog.Detail
-	for _, id := range ids {
+	for i, id := range ids {
+		// v4.0.1（安全审查 问题2）：请求取消时剩余 id 没处理，不能落到「回收站记录不存在」。
+		if ctx.Err() != nil {
+			res.Unprocessed = len(ids) - i
+			res.Errors = append(res.Errors, fmt.Sprintf("操作已取消，剩余 %d 个未处理", res.Unprocessed))
+			break
+		}
 		t, err := e.st.GetTrash(ctx, id)
 		if err != nil || t == nil {
 			res.Failed = append(res.Failed, fmt.Sprint(id))
@@ -745,6 +787,9 @@ func (e *Engine) restoreLocked(ctx context.Context, ids []int64) *RestoreResult 
 	}
 	entry := oplog.New("trash_restore")
 	entry.Summary = fmt.Sprintf("从隔离区恢复 %d 个文件，失败 %d 个", len(res.Restored), len(res.Failed))
+	if res.Unprocessed > 0 {
+		entry.Summary += fmt.Sprintf("，取消未处理 %d 个", res.Unprocessed)
+	}
 	entry.TargetCount = len(ids)
 	entry.Details = details
 	entry.SetFailure(res.Errors)
@@ -855,19 +900,28 @@ func (e *Engine) DeletePermanent(ctx context.Context, ids []int64) *TrashResult 
 		snapPaths = append(snapPaths, p.row.TrashPath)
 	}
 	snap := e.beginOpSnapshot(ctx, "delete", snapPaths)
+	var removeFailDetails []oplog.Detail
+	var removeFailErrs []string
 	for _, p := range pend {
 		t := p.row
 		if err := os.Remove(t.TrashPath); err != nil && !os.IsNotExist(err) {
-			// 审计行已落库且只增不改，个别文件删除失败只写运行日志与本次响应。
+			// 授权审计行已在前面落库且只增不改，这里只收集删除阶段的失败，稍后补写结果审计。
 			applog.Warn("永久删除失败（%s）：%v", t.TrashPath, err)
 			snap.Skip(t.TrashPath, err.Error())
 			res.Failed = append(res.Failed, t.TrashPath)
 			res.Errors = append(res.Errors, err.Error())
+			removeFailDetails = append(removeFailDetails, oplog.Detail{
+				Path: t.OrigPath, NewPath: t.TrashPath, Size: t.Size, Hash: t.Hash, Reason: err.Error(),
+			})
+			removeFailErrs = append(removeFailErrs, err.Error())
 			continue
 		}
 		removedIDs = append(removedIDs, p.id)
 		res.Moved = append(res.Moved, t.OrigPath)
 	}
+	// v4.0.1（安全审查 问题1）：删除阶段有失败时补写一条结果审计，记录实际成功数/失败数/原因。
+	// 授权行只增不改，这里追加第二行，事后追溯才能看到「实际删除清单」而不是「获准清单」。
+	e.appendTrashResultAudit(wctx, "trash_delete", "永久删除结果", len(pend), len(removedIDs), removeFailDetails, removeFailErrs, start)
 	if err := e.st.DeleteTrashRows(wctx, removedIDs); err != nil {
 		applog.Warn("永久删除已完成，但隔离记录清理失败（%d 条）：%v", len(removedIDs), err)
 		res.Errors = append(res.Errors, "文件已删除，但隔离记录未能清理："+err.Error())
@@ -938,16 +992,24 @@ func (e *Engine) EmptyTrash(ctx context.Context) (int64, []string) {
 		snapPaths = append(snapPaths, t.TrashPath)
 	}
 	snap := e.beginOpSnapshot(ctx, "trash_empty", snapPaths)
+	var removeFailDetails []oplog.Detail
+	var removeFailErrs []string
 	for _, t := range rows {
 		if err := os.Remove(t.TrashPath); err != nil && !os.IsNotExist(err) {
 			applog.Warn("清空隔离区时删除失败（%s）：%v", t.TrashPath, err)
 			snap.Skip(t.TrashPath, err.Error())
 			errs = append(errs, err.Error())
+			removeFailDetails = append(removeFailDetails, oplog.Detail{
+				Path: t.OrigPath, NewPath: t.TrashPath, Size: t.Size, Hash: t.Hash, Reason: err.Error(),
+			})
+			removeFailErrs = append(removeFailErrs, err.Error())
 			continue
 		}
 		ids = append(ids, t.ID)
 	}
 	errs = append(errs, skipped...)
+	// v4.0.1（安全审查 问题1）：清空阶段的失败同样补写结果审计（授权行只增不改）。
+	e.appendTrashResultAudit(wctx, "trash_empty", "清空隔离区结果", len(rows), len(ids), removeFailDetails, removeFailErrs, start)
 	if err := e.st.DeleteTrashRows(wctx, ids); err != nil {
 		applog.Warn("清空隔离区已完成，但记录清理失败（%d 条）：%v", len(ids), err)
 		errs = append(errs, "文件已删除，但隔离记录未能清理："+err.Error())
@@ -990,6 +1052,49 @@ func (e *Engine) HealTrashRows(ctx context.Context, rows []store.TrashRow) []sto
 	}
 	applog.Info("已清理 %d 条幽灵隔离记录（隔离文件已不存在）", len(dead))
 	return kept
+}
+
+// appendTrashResultAudit 在删除/清空有失败时补写一条「结果审计」（v4.0.1 安全审查 问题1）。
+// 前面的授权行在动手前落库且只增不改；这一行记录实际成功数、失败数与失败原因，
+// 事后按「操作记录」追溯时才不会把「获准清单」误当成「实际清单」。无失败则不写，避免噪音。
+func (e *Engine) appendTrashResultAudit(ctx context.Context, action, title string, planned, succeeded int, failDetails []oplog.Detail, failErrs []string, start time.Time) {
+	if len(failErrs) == 0 {
+		return
+	}
+	entry := oplog.New(action)
+	entry.Summary = fmt.Sprintf("%s：计划 %d，成功 %d，失败 %d", title, planned, succeeded, len(failErrs))
+	entry.TargetCount = planned
+	entry.Details = failDetails
+	if succeeded == 0 {
+		entry.Result = oplog.ResultFail
+	} else {
+		entry.Result = oplog.ResultPartial
+	}
+	entry.Error = oplog.JoinErrors(failErrs)
+	entry.DurationMS = time.Since(start).Milliseconds()
+	if err := e.recordOp(ctx, entry); err != nil {
+		applog.Warn("%s结果审计写入失败：%v", title, err)
+	}
+}
+
+// HealTrashMaintenance 在写锁内清理幽灵隔离行（v4.0.1 安全审查 问题3）。
+// GET /api/trash 及导出退回纯读后，幽灵行改由启动/维护任务清理；放进 lockWrites
+// 保证与其它写入口互斥，不再出现「GET 路径偷偷 DELETE」。
+func (e *Engine) HealTrashMaintenance(ctx context.Context) {
+	unlock := e.lockWrites()
+	defer unlock()
+	rows, err := e.st.ListTrash(ctx)
+	if err != nil {
+		applog.Warn("清理幽灵隔离行前读取隔离区失败：%v", err)
+		return
+	}
+	e.HealTrashRows(ctx, rows)
+}
+
+// StartTrashMaintenance 在后台启动一次幽灵隔离行清理（v4.0.1 问题3）。
+// 由 main 在引擎就绪后调用；测试不自动触发，避免与造幽灵行的用例竞态。
+func (e *Engine) StartTrashMaintenance() {
+	go e.HealTrashMaintenance(e.baseCtx)
 }
 
 // moveFile 把文件搬到目标位置；目标已存在时拒绝，绝不覆盖。

@@ -44,7 +44,7 @@ import (
 //go:embed ui
 var uiFS embed.FS
 
-const Version = "4.0.0"
+const Version = "4.0.1"
 
 type Server struct {
 	e       *engine.Engine
@@ -1408,10 +1408,12 @@ func (s *Server) scanBusy(w http.ResponseWriter) bool {
 	return true
 }
 
-// handleTrash 是隔离区的读写入口：GET 返回清单并顺手清理幽灵行，POST 把文件移入隔离区。
+// handleTrash 是隔离区的入口：GET 返回清单（纯读），POST 把文件移入隔离区。
+// v4.0.1（安全审查 问题3）：GET 不再顺手清理幽灵行（那是写库），改为纯读，
+// 与 GET /api/trash/list 口径统一；幽灵行由引擎启动时的 HealTrashMaintenance 负责。
 func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		s.writeTrashPage(w, r, true)
+		s.writeTrashPage(w, r)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -1456,12 +1458,11 @@ func (s *Server) handleTrashList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 405, errorResponse{Error: "请求方法不支持"})
 		return
 	}
-	s.writeTrashPage(w, r, false)
+	s.writeTrashPage(w, r)
 }
 
-// writeTrashPage 是两条 GET 路由的共用实现；heal=false 时完全只读。
-// heal=true 保留 v3.25.2 行为：老路径全量清理幽灵行，分页路径只清本页。
-func (s *Server) writeTrashPage(w http.ResponseWriter, r *http.Request, heal bool) {
+// writeTrashPage 是两条 GET 路由的共用实现，纯只读，不写库也不动文件（v4.0.1 安全审查 问题3）。
+func (s *Server) writeTrashPage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limitStr, cursor := q.Get("limit"), q.Get("cursor")
 	if limitStr == "" && cursor == "" {
@@ -1471,10 +1472,6 @@ func (s *Server) writeTrashPage(w http.ResponseWriter, r *http.Request, heal boo
 		if err != nil {
 			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
-		}
-		if heal {
-			// v3.10.10（第五轮 P2-1）：顺手清掉文件已不在的幽灵行，避免隔离区长期显示无法恢复的条目。
-			items = s.e.HealTrashRows(r.Context(), items)
 		}
 		if items == nil {
 			items = []store.TrashRow{}
@@ -1501,15 +1498,6 @@ func (s *Server) writeTrashPage(w http.ResponseWriter, r *http.Request, heal boo
 		return
 	}
 	kept, total := page.Rows, page.Total
-	if heal {
-		// 分页路径只对本页做幽灵清理：单批上限就是本页条数（≤500）。
-		// HealTrashRows 删除失败时原样返回入参，不会出现「清了半批」。
-		kept = s.e.HealTrashRows(r.Context(), page.Rows)
-		total = page.Total - (len(page.Rows) - len(kept))
-		if total < len(kept) {
-			total = len(kept)
-		}
-	}
 	if kept == nil {
 		kept = []store.TrashRow{}
 	}

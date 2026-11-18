@@ -127,7 +127,7 @@ ffmpeg -hide_banner -encoders | grep qsv
 
 ## 版本
 
-完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v4.0.0** —— 响应契约全面重构：internal/web 下 501 处 `map[string]any` 响应全部改为具名 struct（字段名有编译期保障），前端类型声明由 `tools/gen_types.py` 从 Go 的 json tag 自动生成，新增前端类型检查门禁。零构建部署形态不变（产物仍是原生 JS、go:embed 内嵌、无 CDN、无运行时依赖），所有接口的 JSON 键集合与取值语义均未改变。上一版（v3.27.0）新增前端类型层试点，分组类接口的响应改为具名 struct 并补了契约测试。
+完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v4.0.1** —— 数据安全检查修复：永久删除/清空隔离区补写「结果审计」（实际成功数/失败数/原因）、请求取消不再误报「索引中不存在」、`GET /api/trash` 与隔离区导出退回纯读（幽灵行清理改到引擎启动的写锁内）、哈希回写落库前重新 Lstat 复核防内容错位、隔离失败回滚不再重建用户已删的目录。上一版 v4.0.0 把 internal/web 下 501 处 `map[string]any` 响应全部改为具名 struct，前端类型声明由 `tools/gen_types.py` 从 Go 的 json tag 自动生成，新增前端类型检查门禁；零构建部署形态不变（产物仍是原生 JS、go:embed 内嵌、无 CDN、无运行时依赖）。
 
 ## 维护者 / Maintainer
 
