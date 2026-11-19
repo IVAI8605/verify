@@ -27,6 +27,9 @@ backups/
 .box-agent/
 .box-agent-scratch/
 
+# CodeGraph 本地代码索引（AI 工具产物，含 SQLite/WAL，不进版本库）
+.codegraph/
+
 # cache\ 的等价临时目录名（规范第 2 节），重建后同样忽略
 /tmp/
 
