@@ -191,7 +191,7 @@ interface FilesLimitOrderResp {
 
 /** 后端 filesResponse（7 个字段）。 */
 interface FilesResp {
-  files: string;
+  files: string[];
   total?: number;
   limit?: number;
   order?: string;
@@ -263,7 +263,7 @@ interface HealthStatusResp {
 /** 后端 importGroupsResponse（3 个字段）。 */
 interface ImportGroupsResp {
   session: any;
-  groups: any;
+  groups: any[];
   total_groups: number;
 }
 
@@ -274,7 +274,7 @@ interface ImportResultResp {
   groups: number;
   matched: number;
   unmatched: number;
-  warnings?: string;
+  warnings?: string[];
 }
 
 /** 后端 importSessionResponse（1 个字段）。 */
@@ -284,7 +284,7 @@ interface ImportSessionResp {
 
 /** 后端 importSessionsResponse（1 个字段）。 */
 interface ImportSessionsResp {
-  sessions: any;
+  sessions: any[];
 }
 
 /** 后端 introGroupsResponse（7 个字段）。 */
@@ -338,8 +338,8 @@ interface ModeResp {
 
 /** 后端 moveResultResponse（2 个字段）。 */
 interface MoveResultResp {
-  moved: string;
-  failed: string;
+  moved: string[];
+  failed: string[];
 }
 
 /** 后端 nResponse（2 个字段）。 */
@@ -568,7 +568,7 @@ interface SearchFacetsResp {
 /** 后端 searchItemsResponse（3 个字段）。 */
 interface SearchItemsResp {
   total: number;
-  items: any;
+  items: any[];
   ready: boolean;
 }
 
@@ -589,7 +589,7 @@ interface SearchReadyErrorResp {
 /** 后端 searchResultsResponse（4 个字段）。 */
 interface SearchResultsResp {
   total: number;
-  items: any;
+  items: any[];
   next_offset: number;
   took_ms: number;
 }
@@ -601,9 +601,9 @@ interface SearchSQLResp {
   truncated: boolean;
   degraded: boolean;
   ready: boolean;
-  items: any;
+  items: any[];
   next_cursor: string;
-  files: any;
+  files: any[];
   notice?: string;
 }
 
@@ -619,7 +619,7 @@ interface SearchSelectionResp {
 interface SearchStatusResp {
   ready: boolean;
   total?: number;
-  items?: any;
+  items?: any[];
   building: boolean;
   built_at: number;
   degraded: boolean;
@@ -638,7 +638,7 @@ interface SnapshotEmptyResp {
 interface SnapshotFacetsResp {
   total: number;
   types: any;
-  dirs: any;
+  dirs: any[];
 }
 
 /** 后端 snapshotGroupsResponse（5 个字段）。 */
@@ -690,7 +690,7 @@ interface SyncImportResp {
 
 /** 后端 syncPeersResponse（2 个字段）。 */
 interface SyncPeersResp {
-  peers: any;
+  peers: any[];
   machine: string;
 }
 
@@ -732,7 +732,7 @@ interface TokenResp {
 
 /** 后端 transcodeResidueResponse（2 个字段）。 */
 interface TranscodeResidueResp {
-  files: any;
+  files: any[];
   scanned_dirs: number;
 }
 
@@ -744,7 +744,7 @@ interface TranscodeStatusResp {
 
 /** 后端 transcodeTasksResponse（2 个字段）。 */
 interface TranscodeTasksResp {
-  tasks: any;
+  tasks: any[];
   encoder: string;
 }
 

@@ -187,7 +187,10 @@ def ts_type(go_type, defs, seen=None):
         inner = go_type[2:]
         if inner in defs and inner not in seen:
             return ts_type_name(inner) + '[]'
-        return ts_type(inner, defs, seen)
+        # 基础类型的 slice（[]string / []int 等）：先解析元素类型，再补 []。
+        # 早期这里直接 return ts_type(inner)，把方括号丢了，
+        # 生成出 moved: string（实际是 []string）这类错误类型。
+        return ts_type(inner, defs, seen) + '[]'
     if go_type.startswith('*'):
         return 'any'
     if go_type in defs and go_type not in seen:
