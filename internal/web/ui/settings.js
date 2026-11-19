@@ -451,7 +451,7 @@ function fillCleanupForm(p){
 async function loadCleanupPlans(){
   try {
     const r = /** @type {CleanupPlansResp} */ (await api('/api/cleanup/plans'));
-    S.cleanupPlans = r.plans || [];
+    S.cleanupPlans = r.plans;
     renderCleanupList();
   } catch(e) { toast(e.message, 'err'); }
 }
@@ -780,7 +780,7 @@ async function loadSyncPeers(){
   if (!box) return;
   try {
     const r = /** @type {SyncPeersResp} */ (await api('/api/sync/peers'));
-    const peers = r.peers || [];
+    const peers = r.peers;
     const list = peers.length
       ? peers.map(p => `<div class="scanrow"><span class="mono">${esc(p.machine)}</span><span class="hint">${esc(fmtT(Number(p.imported_at) * 1e9))} · ${p.row_count} 条</span><button class="btn ghost" data-act="sync-peer-del" data-machine="${esc(p.machine)}">删除</button></div>`).join('')
       : '<span class="hint">还没有导入其他设备的指纹包</span>';
@@ -843,7 +843,7 @@ async function loadVideoTags(){
   const box = $('tagList'); if (!box) return;
   try {
     const r = /** @type {TagsResp} */ (await api('/api/video_tags'));
-    const tags = r.tags || [];
+    const tags = r.tags;
     S.videoTags = tags;
     if (!tags.length) {
       box.innerHTML = '<span class="hint">还没有标签。在下面新建一个，比如「剧集名」用目录名取值。</span>';
@@ -937,7 +937,7 @@ async function viewTagGroups(id){
   box.innerHTML = '<span class="hint">分组计算中…</span>';
   try {
     const r = /** @type {GroupsResp} */ (await api('/api/groups/tag?tag_id=' + id + '&page=1&page_size=20'));
-    const groups = r.groups || [];
+    const groups = r.groups;
     if (!groups.length) {
       box.innerHTML = '<span class="hint">「' + esc(tag ? tag.name : '') + '」还没有形成重复组：至少要有 2 个文件的标签值相同。</span>';
       return;
@@ -1160,7 +1160,7 @@ async function loadHealth(){
       renderHealth();
       return;
     }
-    h.items = r.items || [];
+    h.items = r.items;
     h.total = r.total || 0;
     h.sel.clear();
     // 原因 key 跨类别不通用，重新加载时必须清掉筛选，避免筛出空列表。
@@ -1200,7 +1200,7 @@ async function loadAllHealth(h){
       try {
         const r = /** @type {HealthItemsResp} */ (await api('/api/health/results?kind=' + encodeURIComponent(h.kind) +
           '&limit=' + HEALTH_PAGE + '&offset=' + offsets[k]));
-        pages[k] = r.items || [];
+        pages[k] = r.items;
       } catch(e) {
         // 单页失败只留空，其余页继续合并，避免一页抖动导致整页空白（v3.10.3）。
         pages[k] = null;
@@ -1242,7 +1242,7 @@ async function loadMoreHealth(){
         try {
           const r = /** @type {HealthItemsResp} */ (await api('/api/health/results?kind=' + encodeURIComponent(h.kind) +
             '&limit=' + HEALTH_PAGE + '&offset=' + off));
-          appendHealthItems(h, r.items || []);
+          appendHealthItems(h, r.items);
           h.total = r.total || h.total;
         } catch(e) { rest.push(off); }
       }
@@ -1253,7 +1253,7 @@ async function loadMoreHealth(){
     }
     const r = /** @type {HealthItemsResp} */ (await api('/api/health/results?kind=' + encodeURIComponent(h.kind) +
       '&limit=' + HEALTH_PAGE + '&offset=' + h.items.length));
-    const batch = r.items || [];
+    const batch = r.items;
     appendHealthItems(h, batch);
     h.total = r.total || h.total;
     if (!batch.length || h.items.length >= h.total) h.complete = true;
@@ -1306,7 +1306,7 @@ function scheduleHealthPoll(){
     if (fits && now - (h.lastListSync || 0) >= 5000) {
       try {
         const r = /** @type {HealthItemsResp} */ (await api('/api/health/results?kind=' + encodeURIComponent(h.kind) + '&limit=' + h.total));
-        h.items = r.items || [];
+        h.items = r.items;
         h.total = r.total || h.total;
         h.lastListSync = now;
         renderHealth();

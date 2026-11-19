@@ -419,8 +419,8 @@ async function loadMoreGroups(){
   S.loadingMore = true;
   updateListStatus();
   try {
-    const r = await fetchChunk(S.tab, S.loadedPage + 1, filtersForTab(S.tab));
-    const list = r.groups || [];
+    const r = /** @type {GroupsResp} */ (await fetchChunk(S.tab, S.loadedPage + 1, filtersForTab(S.tab)));
+    const list = r.groups;
     if (list.length) {
       const seen = new Set(S.groups.map(g => g.key));
       list.forEach(g => { if (!seen.has(g.key)) S.groups.push(g); });
@@ -678,8 +678,8 @@ async function loadGroups(mode){
   const pf = takePrefetch(mode, filters);
   if (pf) { applyPrefetch(pf); return; }
   try {
-    const r = await fetchChunk(mode, 1, filters);
-    S.groups = r.groups || []; S.total = Number(r.total || 0);
+    const r = /** @type {GroupsResp} */ (await fetchChunk(mode, 1, filters));
+    S.groups = r.groups; S.total = Number(r.total || 0);
     S.hasMore = S.groups.length < S.total;
     initSelections();
   } catch(e) {
@@ -696,8 +696,8 @@ async function loadVideo(){
     return;
   }
   try {
-    const r = await fetchChunk('video', 1, {});
-    S.groups = r.groups || []; S.total = Number(r.total || 0);
+    const r = /** @type {GroupsResp} */ (await fetchChunk('video', 1, {}));
+    S.groups = r.groups; S.total = Number(r.total || 0);
     S.hasMore = S.groups.length < S.total;
     initSelections();
     await loadVideoFailures();
@@ -718,8 +718,8 @@ async function loadIntro(){
   const pf = takePrefetch('intro', {});
   if (pf) { applyPrefetch(pf); return; }
   try {
-    const r = await fetchChunk('intro', 1, {});
-    S.groups = r.groups || []; S.total = Number(r.total || 0);
+    const r = /** @type {IntroGroupsResp} */ (await fetchChunk('intro', 1, {}));
+    S.groups = r.groups; S.total = Number(r.total || 0);
     S.introAnalyzed = r.analyzed || 0;
     S.introPending = r.pending || 0;
     S.hasMore = S.groups.length < S.total;
@@ -765,10 +765,10 @@ function maybePrefetch(state){
   const filters = Object.assign({}, filtersForTab(mode));
   const sig = filterSig(mode, filters);
   const t0 = performance.now();
-  fetchChunk(mode, 1, filters).then(r => {
+  fetchChunk(mode, 1, filters).then(/** @param {IntroGroupsResp} r */ r => {
     S.prefetch = {
       mode, filters, sig,
-      groups: r.groups || [], total: Number(r.total || 0), at: Date.now(),
+      groups: r.groups, total: Number(r.total || 0), at: Date.now(),
       meta: { analyzed: r.analyzed, pending: r.pending }
     };
     reportMetric('prefetch_first_chunk', performance.now() - t0, mode);
@@ -1625,7 +1625,7 @@ async function loadTrash(){
   S.loading = true; renderTrash();
   try {
     const r = /** @type {TrashListResp} */ (await api('/api/trash?limit=200'));
-    S.trash = r.items || [];
+    S.trash = r.items;
     S.trashTotal = (typeof r.total === 'number') ? r.total : S.trash.length;
     S.trashCursor = r.next_cursor || '';
     S.trashSel = new Set();
@@ -1640,7 +1640,7 @@ async function loadMoreTrash(){
   try {
     const r = /** @type {TrashListResp} */ (await api('/api/trash?limit=200&cursor=' + encodeURIComponent(S.trashCursor)));
     const seen = new Set((S.trash || []).map(t => t.id));
-    const add = (r.items || []).filter(t => !seen.has(t.id));
+    const add = r.items.filter(t => !seen.has(t.id));
     S.trash = (S.trash || []).concat(add);
     S.trashTotal = (typeof r.total === 'number') ? r.total : S.trash.length;
     S.trashCursor = r.next_cursor || '';
@@ -2041,7 +2041,7 @@ async function loadFuzzy(){
   fz.loading = true; renderFuzzy();
   try {
     const r = /** @type {GroupsResp} */ (await api('/api/groups/fuzzy?near=' + (fz.near ? 1 : 0) + '&page=' + fz.page + '&page_size=20' + advFilterParams()));
-    fz.groups = r.groups || [];
+    fz.groups = r.groups;
     fz.total = r.total || 0;
     fz.loading = false;
     renderFuzzy();
@@ -2058,7 +2058,7 @@ async function loadSemantic(){
   fz.loading = true; renderSemantic();
   try {
     const r = /** @type {GroupsResp} */ (await api('/api/groups/semantic?page=' + fz.page + '&page_size=20' + advFilterParams()));
-    fz.groups = r.groups || [];
+    fz.groups = r.groups;
     fz.total = r.total || 0;
     fz.loading = false;
     renderSemantic();
@@ -2455,7 +2455,7 @@ async function doSearch(){
   try {
     const r = /** @type {SearchSQLResp} */ (await api('/api/search?' + searchParams(st, '').toString()));
     if (st.reqId !== reqId) return; // 只渲染最新一次请求，防止乱序覆盖
-    st.items = r.items || []; st.total = Number(r.total || 0); st.took = Number(r.took_ms || 0);
+    st.items = r.items; st.total = Number(r.total || 0); st.took = Number(r.took_ms || 0);
     st.nextCursor = r.next_cursor || '';
     st.ready = !!r.ready; st.notice = r.notice || '';
   } catch(e) {
@@ -2477,7 +2477,7 @@ async function loadMoreSearch(){
     const r = /** @type {SearchSQLResp} */ (await api('/api/search?' + searchParams(st, st.nextCursor).toString()));
     if (st.reqId !== reqId) return;
     const seen = new Set(st.items.map(x => x.path));
-    (r.items || []).forEach(it => { if (!seen.has(it.path)) { seen.add(it.path); st.items.push(it); } });
+    r.items.forEach(it => { if (!seen.has(it.path)) { seen.add(it.path); st.items.push(it); } });
     st.nextCursor = r.next_cursor || '';
     st.total = Number(r.total || st.total);
     st.took = Number(r.took_ms || st.took);

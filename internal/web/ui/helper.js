@@ -1386,11 +1386,11 @@ function applyPrefetch(pf){
 async function silentRefreshFirstChunk(mode){
   const filters = Object.assign({}, filtersForTab(mode));
   try {
-    const r = await fetchChunk(mode, 1, filters);
+    const r = /** @type {GroupsResp} */ (await fetchChunk(mode, 1, filters));
     if (S.tab !== mode) return;
     const list = $('groupList');
     if (list && list.scrollTop > 300) { S.total = Number(r.total || S.total); updateListStatus(); return; }
-    const fresh = r.groups || [];
+    const fresh = r.groups;
     const seen = new Set(fresh.map(g => g.key));
     // 首块以最新结果为准，已加载的后续块保留，避免用户已滚动的内容消失。
     S.groups = fresh.concat(S.groups.filter(g => !seen.has(g.key)));
