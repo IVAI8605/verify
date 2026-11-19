@@ -20,15 +20,41 @@ func TestRowRemovableVolumeUnmounted(t *testing.T) {
 }
 
 // TestRowRemovableVolumeTrusted 是反例：证明不是「一刀切不清」。
-// 卷正常（隔离目录存在）且文件确实不在时，必须允许清理幽灵行。
+// 卷正常、批次目录还在（用户只是删了其中一个文件）时，必须允许清理幽灵行。
 func TestRowRemovableVolumeTrusted(t *testing.T) {
 	vol := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(vol, ".verify-trash"), 0o750); err != nil {
 		t.Fatal(err)
 	}
+	// 日期/批次目录仍在——对应「用户删了隔离区里的单个文件」这一真实场景。
+	if err := os.MkdirAll(filepath.Join(vol, ".verify-trash", "2026-11-10"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	trashPath := filepath.Join(vol, ".verify-trash", "2026-11-10", "a.mkv")
 	if !RowRemovable(trashPath, []string{vol}) {
-		t.Fatal("卷可信且文件已不存在时应清掉幽灵行")
+		t.Fatal("卷可信、批次目录还在且文件已不存在时应清掉幽灵行")
+	}
+}
+
+// TestRowRemovableBatchDirRenamed 回归 v4.1.2：日期目录被改名/搬走、但文件还在
+// 新目录里时，精确路径 Lstat 也是 ENOENT，绝不能把整批隔离记录当幽灵行删掉。
+func TestRowRemovableBatchDirRenamed(t *testing.T) {
+	vol := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(vol, ".verify-trash"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟批次目录被改名成 2026-11-10-renamed，文件完好无损地待在里面。
+	renamed := filepath.Join(vol, ".verify-trash", "2026-11-10-renamed")
+	if err := os.MkdirAll(renamed, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(renamed, "a.mkv"), []byte("x"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	// 记录里仍写着旧路径；旧路径不存在、卷根也在，但批次目录整体消失 → 必须保留。
+	oldPath := filepath.Join(vol, ".verify-trash", "2026-11-10", "a.mkv")
+	if RowRemovable(oldPath, []string{vol}) {
+		t.Fatal("批次目录被改名时必须保留记录，否则文件变成无法恢复的孤儿")
 	}
 }
 

@@ -92,7 +92,7 @@ func (e *Engine) PreviewTrash(ctx context.Context, paths []string, groups []Tras
 	for _, p := range paths {
 		p = filepath.Clean(p)
 		item := OperationPreview{Path: p}
-		if reason := e.protectedReason(p); reason != "" {
+		if reason := e.protectedReasonResolved(p); reason != "" {
 			item.Reason = reason
 			items = append(items, item)
 			continue
@@ -119,7 +119,7 @@ func (e *Engine) PreviewRestore(ctx context.Context, ids []int64) []OperationPre
 			continue
 		}
 		item.Path = t.OrigPath
-		if reason := e.protectedReason(t.OrigPath); reason != "" {
+		if reason := e.protectedReasonResolved(t.OrigPath); reason != "" {
 			item.Reason = reason + "（如需处理请先解除保护）"
 			items = append(items, item)
 			continue
@@ -291,7 +291,7 @@ func (e *Engine) trashFilesLocked(ctx context.Context, paths []string, groups []
 			break
 		}
 		p = filepath.Clean(p)
-		if reason := e.protectedReason(p); reason != "" {
+		if reason := e.protectedReasonResolved(p); reason != "" {
 			// 预检之后配置可能变化，执行前必须再拦一次
 			snap.Skip(p, reason)
 			res.Failed = append(res.Failed, p)
@@ -863,7 +863,7 @@ func (e *Engine) DeletePermanent(ctx context.Context, ids []int64) *TrashResult 
 		if err != nil || t == nil {
 			continue
 		}
-		if reason := e.protectedReason(t.OrigPath); reason != "" {
+		if reason := e.protectedReasonResolved(t.OrigPath); reason != "" {
 			res.Failed = append(res.Failed, t.OrigPath)
 			res.Errors = append(res.Errors, reason)
 			continue

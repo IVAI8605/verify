@@ -264,10 +264,17 @@ func (s *Store) ListAuditByTask(ctx context.Context, taskID int64) ([]AuditEntry
 	return out, rows.Err()
 }
 
-// LastAuditTaskID 返回最近一次有审计记录的任务号，0 表示没有可撤销的操作。
+// LastAuditTaskID 返回最近一次「健康页可撤销」的审计任务号，0 表示没有。
+//
+// v4.1.2：旧实现取全表 MAX(task_id)，而 rename 是跨入口共用的 operation（组内改名、
+// 规则引擎都写它），trash/transcode 也各自申请 taskID。结果做完一次健康改名后，
+// 只要在别处产生更大的任务号，刷新健康页拿到的就是那个无关任务——点撤销要么
+// 撤销错对象，要么返回 done=0。这里只查健康页专属的 health_rename 与转简体 fanjian。
+// 历史库里健康页写过 rename，已无法从 operation 区分，但那些操作早已过撤销窗口。
 func (s *Store) LastAuditTaskID(ctx context.Context) (int64, error) {
 	var id int64
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(task_id),0) FROM audit_log`).Scan(&id)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(task_id),0) FROM audit_log WHERE operation IN ('health_rename','fanjian')`).Scan(&id)
 	return id, err
 }
 

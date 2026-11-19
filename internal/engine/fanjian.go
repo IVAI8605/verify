@@ -117,7 +117,7 @@ func (e *Engine) ConvertNames(ctx context.Context, paths []string, toTraditional
 			res.Errors[p] = "隔离区内的文件不支持转换"
 			continue
 		}
-		if reason := e.protectedReason(p); reason != "" {
+		if reason := e.protectedReasonResolved(p); reason != "" {
 			snap.Skip(p, reason)
 			res.Failed = append(res.Failed, p)
 			res.Errors[p] = reason

@@ -272,7 +272,7 @@ func (e *Engine) executeCleanupPlan(ctx context.Context, p *store.CleanupPlan) (
 			if i == keep || planned[g.Files[i].Path] {
 				continue
 			}
-			if reason := e.protectedReason(g.Files[i].Path); reason != "" {
+			if reason := e.protectedReasonResolved(g.Files[i].Path); reason != "" {
 				res.Skipped++
 				continue
 			}

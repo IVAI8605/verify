@@ -72,7 +72,7 @@ func TestRenameHealthFilesAndUndo(t *testing.T) {
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("应有 1 条审计，实际 %d（err=%v）", len(entries), err)
 	}
-	if entries[0].Operation != "rename" || entries[0].NewPath != dst {
+	if entries[0].Operation != "health_rename" || entries[0].NewPath != dst {
 		t.Fatalf("审计内容不符: %+v", entries[0])
 	}
 

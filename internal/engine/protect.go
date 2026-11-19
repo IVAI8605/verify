@@ -47,6 +47,36 @@ func (e *Engine) protectedReason(path string) string {
 	return "受保护目录内的文件禁止清理"
 }
 
+// protectedReasonResolved 是写操作专用的保护判定：同时检查原始路径「及其软链接
+// 解析后的真实路径」是否落在保护目录内。
+//
+// v4.1.2：写入口此前用 ValidPath（Clean + EvalSymlinks + 卷前缀重判）判卷，却用
+// 原始字符串判保护，两者口径不一致。卷内建一个软链接 /vol1/link → /vol1/protected，
+// 传 /vol1/link/x 时：解析后在卷内（过卷校验），原始串不匹配保护根（过保护校验），
+// 于是受保护文件被搬走/清理。保护配置路径本身也可能是软链接，因此两边都解析、双向
+// 比对：只要任一组合命中就拦下。
+//
+// 必须与 ValidPath / Lstat 确认文件存在之后调用——EvalSymlinks 对不存在的路径会失败。
+func (e *Engine) protectedReasonResolved(path string) string {
+	if e.IsProtected(path) {
+		return "受保护目录内的文件禁止清理"
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil || resolved == "" || filepath.Clean(resolved) == filepath.Clean(path) {
+		return ""
+	}
+	// 真实路径命中保护根，或保护根自身是软链接时命中其解析结果 —— 都算受保护。
+	if e.IsProtected(resolved) {
+		return "受保护目录内的文件禁止清理"
+	}
+	for _, r := range e.cfg.Get().ProtectPaths {
+		if real, rerr := filepath.EvalSymlinks(filepath.Clean(strings.TrimSpace(r))); rerr == nil && pathUnderAny(resolved, []string{real}) {
+			return "受保护目录内的文件禁止清理"
+		}
+	}
+	return ""
+}
+
 // SetProtectPaths 由设置页写入保护目录；规范化后落盘并记日志。
 // v3.9.10 备注：当前全项目零调用，设置页改保护目录走的是通用配置保存；
 // 保留是为了将来把「保护目录」单独落盘并记录审计时复用这套规范化逻辑。

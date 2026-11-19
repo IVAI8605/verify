@@ -125,7 +125,10 @@ async function transcodeCleanResidue(){
     const preview = files.slice(0, 5).map(f => f.path).join('\n');
     if (!confirm('发现 ' + files.length + ' 个转码残留（扫描 ' + (r.scanned_dirs || 0) + ' 个目录），全部移入隔离区？\n\n' + preview + (files.length > 5 ? '\n…' : ''))) return;
     const res = await postJSON('/api/transcode/residue/clean', { paths: files.map(f => f.path) });
-    toast('已移入隔离区 ' + (res.moved || 0) + ' 个，失败 ' + (res.failed || 0) + ' 个', res.failed && res.failed.length ? 'warn' : 'ok');
+    // v4.1.2：moved/failed 是路径数组，旧实现直接当数字拼串，空数组显示空白、非空显示路径列表。
+    const movedN = Array.isArray(res.moved) ? res.moved.length : (res.moved || 0);
+    const failedN = Array.isArray(res.failed) ? res.failed.length : (res.failed || 0);
+    toast('已移入隔离区 ' + movedN + ' 个，失败 ' + failedN + ' 个', failedN ? 'warn' : 'ok');
   } catch(e) { toast(e.message, 'err'); }
 }
 
@@ -1709,17 +1712,20 @@ function bindQuietHoursCheck(){
 // 把几万行塞进模态框会卡死浏览器，而用户确认的是「这一批」，不是逐条核名单。
 const HEALTH_CONFIRM_PREVIEW = 300;
 
-function healthConfirm(title, paths, action){
+function healthConfirm(title, paths, action, showTarget){
+  // v4.1.2：移入隔离区不改文件名，预览里显示 it.suggest（改名建议）会让人误以为
+  // 会顺手改名。非改名操作传 showTarget=false，第二列改成「—」并换列头。
+  const withTarget = showTarget !== false;
   const shown = paths.slice(0, HEALTH_CONFIRM_PREVIEW);
   const rows = shown.map(it => `<tr><td class="fpath" title="${esc(it.path)}">${esc(it.path)}</td>
-    <td class="hint">${it.suggest ? esc(it.suggest) : '—'}</td></tr>`).join('');
+    <td class="hint">${withTarget && it.suggest ? esc(it.suggest) : '—'}</td></tr>`).join('');
   const more = paths.length > shown.length
     ? `<div class="hint" style="padding:6px 0">仅预览前 ${shown.length} 项，其余 ${paths.length - shown.length} 项会一并执行。</div>`
     : '';
   setModal(title,
     `<div class="hint" style="margin-bottom:8px">共 ${paths.length} 个文件，确认后才执行。</div>
      <div class="preview-list" style="max-height:320px;overflow:auto"><table>
-       <thead><tr><th>原路径</th><th>目标名</th></tr></thead><tbody>${rows}</tbody></table></div>
+       <thead><tr><th>原路径</th><th>${withTarget ? '目标名' : '操作'}</th></tr></thead><tbody>${rows}</tbody></table></div>
      ${more}
      <div class="form-actions">
        <button class="btn ghost" data-act="modal-cancel">取消</button>
@@ -1752,7 +1758,16 @@ async function healthRunBatches(label, paths, call, batchSize){
     op: { reconcile: { checked: 0, mismatched: 0, items: [], truncated: false, advice: '' } },
     call: async (chunk, o) => {
       const r = await call(chunk) || {};
-      if (r.task_id) { taskId = r.task_id; taskIds.push(r.task_id); }
+      if (r.task_id) {
+        taskId = r.task_id;
+        taskIds.push(r.task_id);
+        // v4.1.2：每批一拿到任务号就立刻写回 state，不等整轮结束。
+        // 旧实现要等 await 返回才由调用方写 h.lastTasks，批量改名做到一半关掉页面时，
+        // 前面已执行批次的撤销号全部丢失，用户再也没法还原——可逆操作变成不可逆。
+        // 只累积 rename/fanjian 批次的号；移入隔离区等 call 不返回 task_id，天然不会进来。
+        h.lastTasks = taskIds.slice();
+        h.lastTask = r.task_id;
+      }
       if (r.reconcile) o.reconcile = mergeReconcile(o.reconcile, r.reconcile);
       return { done: r.done || 0, failed: r.failed || 0, items: r.items || [] };
     },
@@ -1854,27 +1869,40 @@ async function healthUndo(){
   // 否则全选 5000 个改名后只能还原最后 500 个。旧会话没有 lastTasks 时退回单个任务。
   const tasks = (h.lastTasks && h.lastTasks.length) ? h.lastTasks.slice() : (h.lastTask ? [h.lastTask] : []);
   if (!tasks.length) { toast('没有可撤销的操作', 'err'); return; }
+  // v4.1.2：撤销失败的行要留着任务号，否则用户再也无从重试——改名卡在新名上，
+  // 本来可逆的操作变成不可逆。逐项失败原因（后端 r.items）也要展示，不能只报个数字。
+  const undoItems = [];
+  const failedTasks = [];
   let done = 0, failed = 0, errs = 0;
-  try {
-    // 逆序撤销：后发生的批次先还原，避免同一文件被多批引用时互相覆盖。
-    for (let i = tasks.length - 1; i >= 0; i--) {
-      try {
-        const r = await postJSON('/api/health/undo', { task_id: tasks[i] });
-        done += r.done || 0;
-        failed += r.failed || 0;
-      } catch(e) {
-        errs++;
-      }
+  for (let i = tasks.length - 1; i >= 0; i--) {
+    try {
+      const r = await postJSON('/api/health/undo', { task_id: tasks[i] });
+      done += r.done || 0;
+      failed += r.failed || 0;
+      for (const it of (r.items || [])) undoItems.push(it);
+      // 这一批有失败项 → 保留它的任务号，供下次重试。
+      if ((r.failed || 0) > 0) failedTasks.push(tasks[i]);
+    } catch(e) {
+      errs++;
+      failedTasks.push(tasks[i]);
+      undoItems.push({ path: '任务 ' + tasks[i], error: e.message || '撤销请求失败' });
     }
-    const msg = `撤销完成：还原 ${done} 个，失败 ${failed} 个` + (errs ? `，${errs} 批任务无法撤销` : '');
-    toast(msg, (failed || errs) ? 'err' : 'ok');
+  }
+  const msg = `撤销完成：还原 ${done} 个，失败 ${failed} 个` + (errs ? `，${errs} 批任务无法撤销` : '');
+  toast(msg, (failed || errs) ? 'err' : 'ok');
+  if (undoItems.some(it => it.error)) {
+    showResultModal('撤销结果：部分失败', undoItems);
+    // 保留未成功的任务号，刷新后仍能重试（loadHealth 可能覆盖，这里在它之后也再写一次）。
+    h.lastTasks = failedTasks.slice();
+    h.lastTask = failedTasks[failedTasks.length - 1] || 0;
+  } else {
     h.lastTask = 0;
     h.lastTasks = [];
-    await loadHealth();
-    // 状态接口的 last_audit 仍指向刚撤销的任务；这里再清一次，
-    // 避免按钮立刻又亮起来、点了却提示无可撤销内容。
-    h.lastTask = 0;
-    h.lastTasks = [];
-    renderHealth();
-  } catch(e) { toast(e.message, 'err'); }
+  }
+  await loadHealth();
+  // 成功撤销后状态接口的 last_audit 仍指向刚撤销的任务，清一次避免按钮空亮。
+  // 有失败批次时保留它们的号，让按钮继续可用。
+  if (!failedTasks.length) { h.lastTask = 0; h.lastTasks = []; }
+  else { h.lastTasks = failedTasks.slice(); h.lastTask = failedTasks[failedTasks.length - 1]; }
+  renderHealth();
 }

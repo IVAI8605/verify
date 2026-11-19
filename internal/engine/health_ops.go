@@ -120,7 +120,7 @@ func (e *Engine) RenameHealthFiles(ctx context.Context, kind health.Kind, paths 
 			entries := make([]store.AuditEntry, 0, len(ok))
 			for _, j := range ok {
 				entries = append(entries, store.AuditEntry{
-					TaskID: taskID, Operation: "rename", OriginalPath: j.path, NewPath: j.target,
+					TaskID: taskID, Operation: "health_rename", OriginalPath: j.path, NewPath: j.target,
 				})
 			}
 			if err := e.st.AddAuditBatch(wctx, entries); err != nil {
@@ -247,7 +247,7 @@ func (e *Engine) planHealthRenames(paths []string, kind health.Kind, opt health.
 func (e *Engine) planHealthRename(p string, kind health.Kind, opt health.NameOptions, onlyUppercase bool) healthRenameJob {
 	p = filepath.Clean(p)
 	job := healthRenameJob{path: p}
-	if reason := e.protectedReason(p); reason != "" {
+	if reason := e.protectedReasonResolved(p); reason != "" {
 		job.err = reason
 		return job
 	}
@@ -422,13 +422,14 @@ func (e *Engine) TrashHealthFiles(ctx context.Context, paths []string) *HealthOp
 			continue
 		}
 		if err := e.st.AddTrash(wctx, p, dst, vol, "", "", "health", info.Size()); err != nil {
-			// 回滚失败时文件已在隔离区但没有记录，必须进差异清单。
-			msg := "记录隔离区失败，已回滚: " + err.Error()
-			if rbErr := moveFile(dst, p); rbErr != nil {
-				snap.MarkProblem(p, opExpectRelocated, dst, "记录隔离区失败且回滚失败，文件可能已在隔离区但没有恢复记录："+rbErr.Error())
-				msg = "记录隔离区失败且回滚失败: " + err.Error()
+			// v4.1.2：复用统一回滚——原父目录若已被用户删掉，不能靠 moveFile 里的
+			// MkdirAll 把目录悄悄重建出来（等于撤销用户的一次删除）。
+			restored, note := e.rollbackTrashRecord(snap, p, dst, err)
+			msg := "记录隔离区失败：" + err.Error()
+			if restored {
+				msg = "记录隔离区失败，已回滚: " + err.Error()
 			} else {
-				snap.Skip(p, "记录隔离区失败，已回滚："+err.Error())
+				msg = "记录隔离区失败，" + note
 			}
 			res.Failed++
 			res.Items = append(res.Items, HealthOpItem{Path: p, Error: msg})
@@ -464,7 +465,7 @@ func (e *Engine) checkHealthTrashPath(ctx context.Context, p string) string {
 	// v1.42.0：健康页清理也必须遵守保护目录（BUG-03）。
 	// 其他清理入口都在各自的预检里调用了 protectedReason，这里此前漏掉，
 	// 导致保护目录里的 .tmp/.bak 能被成功移入隔离区。
-	if reason := e.protectedReason(p); reason != "" {
+	if reason := e.protectedReasonResolved(p); reason != "" {
 		return reason
 	}
 	fi, err := os.Lstat(p)
@@ -499,9 +500,11 @@ func (e *Engine) UndoHealthTask(ctx context.Context, taskID int64) (*HealthOpRes
 	restored := make([][2]string, 0, len(entries))
 	for i := len(entries) - 1; i >= 0; i-- {
 		it := entries[i]
-		// fanjian 与 rename 同属改名类审计（OriginalPath→NewPath），撤销方式一致；
+		// fanjian 与 health_rename 同属健康页改名类审计（OriginalPath→NewPath），撤销方式一致；
 		// 文件健康页的「转简体」调用的就是 ConvertNames，撤销必须能回放它。
-		if it.Operation != "rename" && it.Operation != "fanjian" {
+		// rename 仅为兼容老库里健康页写入的历史行；新写入已改用 health_rename，
+		// 避免与组内改名/规则引擎的同名 operation 混淆（见 LastAuditTaskID）。
+		if it.Operation != "health_rename" && it.Operation != "rename" && it.Operation != "fanjian" {
 			res.Items = append(res.Items, HealthOpItem{Path: it.OriginalPath, Error: "该操作不支持在这里撤销，请到隔离区恢复"})
 			continue
 		}
@@ -510,10 +513,18 @@ func (e *Engine) UndoHealthTask(ctx context.Context, taskID int64) (*HealthOpRes
 			res.Items = append(res.Items, HealthOpItem{Path: it.OriginalPath, Error: "改动后的文件已不存在"})
 			continue
 		}
-		if _, err := os.Lstat(it.OriginalPath); err == nil {
-			res.Failed++
-			res.Items = append(res.Items, HealthOpItem{Path: it.OriginalPath, Error: "原文件名已被占用"})
-			continue
+		if origInfo, err := os.Lstat(it.OriginalPath); err == nil {
+			// v4.1.2：大小写不敏感卷（CIFS/NTFS）上「只改大小写」的改名，撤销时
+			// OriginalPath 与 NewPath 是同一个 inode，Lstat 必然命中，旧逻辑会误判
+			// 「原文件名已被占用」直接放弃，撤销功能在这类卷上永远失效。
+			// 与 undoRenameTarget 同口径：同 inode 视为未占用，交给 renameNoOverwrite
+			// 按 SameFile 放行；只有真被别的文件占了才拒绝。
+			newInfo, nerr := os.Lstat(it.NewPath)
+			if nerr != nil || !os.SameFile(origInfo, newInfo) {
+				res.Failed++
+				res.Items = append(res.Items, HealthOpItem{Path: it.OriginalPath, Error: "原文件名已被占用"})
+				continue
+			}
 		}
 		if err := renameNoOverwrite(it.NewPath, it.OriginalPath); err != nil {
 			res.Failed++

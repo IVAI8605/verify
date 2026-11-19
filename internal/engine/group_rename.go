@@ -156,7 +156,7 @@ func (e *Engine) groupRenameCheck(t, basePath, baseDir string) string {
 		return "隔离区内的文件不支持改名"
 	}
 	// 保护目录内禁改（决策 A2）
-	if reason := e.protectedReason(t); reason != "" {
+	if reason := e.protectedReasonResolved(t); reason != "" {
 		return reason
 	}
 	return ""
@@ -185,7 +185,7 @@ func (e *Engine) RenameOne(ctx context.Context, path, newName string) (string, s
 	if strings.Contains(filepath.ToSlash(path), "/.verify-trash/") {
 		return "", "", fmt.Errorf("隔离区内的文件不支持改名")
 	}
-	if reason := e.protectedReason(path); reason != "" {
+	if reason := e.protectedReasonResolved(path); reason != "" {
 		return "", "", fmt.Errorf("%s", reason)
 	}
 	dir := filepath.Dir(path)

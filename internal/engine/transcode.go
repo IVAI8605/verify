@@ -491,7 +491,7 @@ func (e *Engine) TranscodeStart(paths []string, quality, maxRes string) (queued 
 				// 索引缺失被跳过，或回滚失败时，界面仍显示「完成」，但原文件还在、
 				// 新文件留在 _tmp 名下。现在改成替换成功才落 done，否则按失败上报。
 				replaceErr := ""
-				if reason := e.protectedReason(t.Path); reason != "" {
+				if reason := e.protectedReasonResolved(t.Path); reason != "" {
 					replaceErr = "原文件受保护，未替换（" + reason + "）"
 				} else if tr, terr := e.trashFilesLocked(ctx, []string{t.Path}, nil); terr != nil {
 					replaceErr = "原文件移入隔离区失败，未替换：" + terr.Error()

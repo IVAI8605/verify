@@ -902,9 +902,14 @@ document.addEventListener('click', async (ev) => {
     // v3.10.2：全选的是本模块全部条目（数据已全量加载），不只是屏幕内可见的行。
     // 直接改 DOM 勾选状态而不重绘整表：一万多行重绘会明显卡顿。
     const h = healthState();
+    // v4.1.2：按钮文案按「全模块可处理数」算，点击却只选 healthViewItems()（当前筛选视图），
+    // 开着「按原因」筛选时执行集合会小于用户以为的集合。这里与文案同判据：
+    // 数据已全量加载就选 h.items 全模块，否则退回当前视图（文案此时也提示先加载更多）。
+    const allLoaded = h.items.length >= h.total || h.complete;
+    const source = allLoaded ? h.items : healthViewItems();
     // v3.12.0：编码异常的行（路径含 U+FFFD）勾选后回传必然失效，全选时跳过，走整体修复入口。
     // v3.15.0：无法确定的提示项也不进入选择集，它们不可操作。
-    healthViewItems().forEach(it => {
+    source.forEach(it => {
       if (it.path.indexOf('\uFFFD') < 0 && !healthItemAdvisory(it)) h.sel.add(it.path);
     });
     document.querySelectorAll('input[data-act="health-check"]').forEach(cb => { if (!cb.disabled) cb.checked = true; });
@@ -929,12 +934,12 @@ document.addEventListener('click', async (ev) => {
     if (!paths.length) { toast('先选择文件', 'err'); return; }
     healthConfirm('确认批量修正', h.items.filter(x => h.sel.has(x.path)), () => healthRenamePaths(paths));
   } else if (act === 'health-trash-one') {
-    healthConfirm('确认移入隔离区', [{path: el.dataset.path}], () => healthTrashPaths([el.dataset.path]));
+    healthConfirm('确认移入隔离区', [{path: el.dataset.path}], () => healthTrashPaths([el.dataset.path]), false);
   } else if (act === 'health-trash-sel') {
     const h = healthState();
     const paths = Array.from(h.sel);
     if (!paths.length) { toast('先选择文件', 'err'); return; }
-    healthConfirm('确认移入隔离区', h.items.filter(x => h.sel.has(x.path)), () => healthTrashPaths(paths));
+    healthConfirm('确认移入隔离区', h.items.filter(x => h.sel.has(x.path)), () => healthTrashPaths(paths), false);
   } else if (act === 'health-to-simp') {
     const h = healthState();
     const paths = Array.from(h.sel);

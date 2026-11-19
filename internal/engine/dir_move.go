@@ -82,7 +82,7 @@ func (e *Engine) moveDirCheck(srcDir, dstDir string) string {
 // 这里只判保护目录本身（源目录在保护目录下、或源目录就是保护目录）。
 func (e *Engine) protectedReasonDir(dir string) string {
 	// 复用文件级判定：把目录当路径查，命中保护目录前缀即拒绝
-	if reason := e.protectedReason(dir); reason != "" {
+	if reason := e.protectedReasonResolved(dir); reason != "" {
 		return reason
 	}
 	return ""

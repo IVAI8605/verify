@@ -141,7 +141,7 @@ func (e *Engine) EmptyDirClean(ctx context.Context, dirs []string) *EmptyDirResu
 			continue
 		}
 		// 重验 3：保护目录（预检之后配置可能变化，执行前必须再拦一次）
-		if reason := e.protectedReason(d); reason != "" {
+		if reason := e.protectedReasonResolved(d); reason != "" {
 			snap.Skip(d, reason)
 			res.Failed = append(res.Failed, d)
 			res.Errors[d] = reason
@@ -227,7 +227,7 @@ func (e *Engine) EmptyDirValidate(ctx context.Context, dirs []string) *EmptyDirR
 			res.Errors[d] = "目录已非空"
 			continue
 		}
-		if reason := e.protectedReason(d); reason != "" {
+		if reason := e.protectedReasonResolved(d); reason != "" {
 			res.Failed = append(res.Failed, d)
 			res.Errors[d] = reason
 			continue

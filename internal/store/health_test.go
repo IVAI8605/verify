@@ -162,7 +162,7 @@ func TestAuditByTask(t *testing.T) {
 	entries := []AuditEntry{
 		{TaskID: taskID, Operation: "rename", OriginalPath: "/v/a.txt", NewPath: "/v/a_1.txt"},
 		{TaskID: taskID, Operation: "rename", OriginalPath: "/v/b.txt", NewPath: "/v/b_1.txt"},
-		{TaskID: 9999, Operation: "rename", OriginalPath: "/v/other.txt", NewPath: "/v/other_1.txt"},
+		{TaskID: 9999, Operation: "health_rename", OriginalPath: "/v/other.txt", NewPath: "/v/other_1.txt"},
 	}
 	for _, e := range entries {
 		if err := s.AddAudit(ctx, e); err != nil {

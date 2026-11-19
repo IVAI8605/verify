@@ -1656,6 +1656,15 @@ function resultItemsFrom(res, successKey){
     const reason = Array.isArray(errs) ? (errs[i] || '') : (errs && typeof errs === 'object' ? (errs[p] || '') : '');
     return {path:p, ok:false, reason};
   });
+  // v4.1.2：恢复类接口可能返回「文件已恢复、但删隔离行/写索引失败」这类错误，
+  // 它们只有 errors、没有对应的 failed 条目。旧实现按 failed↔errors 下标配对，
+  // 多出来的错误被静默丢掉，界面只报「已恢复 N 个」，幽灵行就无人知晓。
+  // 把这些没有对应失败路径的错误也列出来，让用户在结果页能看到并追溯。
+  if (Array.isArray(errs)) {
+    for (let i = fail.length; i < errs.length; i++) {
+      if (errs[i]) fail.push({ path: '（记录更新失败，见原因）', ok:false, reason: errs[i] });
+    }
+  }
   return ok.concat(fail);
 }
 

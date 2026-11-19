@@ -58,7 +58,7 @@ func (e *Engine) moveCheck(src, targetDir string) string {
 		return "跨卷移动暂不支持"
 	}
 	// 保护目录内禁止移出（决策 6）
-	if reason := e.protectedReason(src); reason != "" {
+	if reason := e.protectedReasonResolved(src); reason != "" {
 		return reason
 	}
 	// 隔离区内的文件不参与移动

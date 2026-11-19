@@ -536,11 +536,15 @@ function refreshOpCardFor(id){
 // 失败项只显示数量，逐条路径与原因导出 CSV 核对，避免几百条把弹窗撑成一张长表。
 function showBatchedOpDone(op, extraHtml, exportName){
   const failed = (op.items || []).filter(it => it.error || it.ok === false);
-  const failHtml = failed.length
-    ? `<div class="hint" style="margin:6px 0">失败 ${failed.length} 个。逐条路径与原因可导出 CSV 另行核对。</div>
-       <div class="form-actions" style="justify-content:flex-start">
-         <button class="btn ghost" data-act="op-export-failures" data-op="${esc(op.id || '')}" data-name="${esc(exportName || '失败明细')}">导出失败明细（CSV）</button>
-       </div>`
+  // v4.1.2：取消时 processed 只算已跑的批次，total-done-failed 是「未处理」条目。
+  // 旧实现明明中止了却还输出「全部成功，没有失败项」，用户以为做完了不会补跑。
+  const unprocessed = Math.max(0, (op.total || 0) - (op.done || 0) - (op.failed || 0));
+  const failHtml = failed.length || (op.cancelled && unprocessed > 0)
+    ? `${failed.length ? `<div class="hint" style="margin:6px 0">失败 ${failed.length} 个。逐条路径与原因可导出 CSV 另行核对。</div>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn ghost" data-act="op-export-failures" data-op="${esc(op.id || '')}" data-name="${esc(exportName || '失败明细')}">导出失败明细（CSV）</button>
+        </div>` : ''}
+       ${op.cancelled && unprocessed > 0 ? `<div class="hint" style="margin:6px 0">另有 <b>${unprocessed}</b> 个未处理（ cancelled 时剩余批次未执行），这些文件保持原状，需要时请重新操作。</div>` : ''}`
     : '<div class="okbox">全部成功，没有失败项。</div>';
   const title = (op.label || '批量操作') + (op.cancelled ? '已中止' : '完成');
   const cancelHint = op.cancelled

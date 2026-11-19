@@ -209,7 +209,7 @@ func (e *Engine) FolderRename(ctx context.Context, dir string, opt FolderRenameO
 			it.Err = "文件不在受管卷内或路径无法解析"
 			continue
 		}
-		if reason := e.protectedReason(it.Path); reason != "" {
+		if reason := e.protectedReasonResolved(it.Path); reason != "" {
 			it.Err = reason
 			continue
 		}

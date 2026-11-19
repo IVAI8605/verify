@@ -57,10 +57,10 @@ func (e *Engine) relinkCheck(keepPath, targetPath string, verifyContent bool) st
 		return "跨卷无法硬链接"
 	}
 	// 保护文件夹与隔离区（设计文档 9.2.2：两侧都不得在保护目录/隔离区内）
-	if r := e.protectedReason(keepPath); r != "" {
+	if r := e.protectedReasonResolved(keepPath); r != "" {
 		return "保留者受保护：" + r
 	}
-	if r := e.protectedReason(targetPath); r != "" {
+	if r := e.protectedReasonResolved(targetPath); r != "" {
 		return "目标受保护：" + r
 	}
 	// 已链接识别（设计文档 9.2.6）：inode 相同说明已是同一份实体，无需也不应重复合并

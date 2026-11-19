@@ -17,6 +17,11 @@ import (
 )
 
 // TranscodeResidue 是一个超过保留期的转码/剪除临时文件（v3.23.0）。
+//
+// transcodeResidueMinAge 是「残留」的最小年龄；预览与执行都用这个值，
+// 执行侧必须自己复核（v4.1.2），不能只信前端传来的清单。
+const transcodeResidueMinAge = 24 * time.Hour
+
 type TranscodeResidue struct {
 	Path  string `json:"path"`
 	Size  int64  `json:"size"`
@@ -114,7 +119,7 @@ func (e *Engine) CleanTranscodeResidue(ctx context.Context, paths []string) (*Tr
 			snap.Skip(p, "路径不在受管存储卷内")
 			continue
 		}
-		if reason := e.protectedReason(p); reason != "" {
+		if reason := e.protectedReasonResolved(p); reason != "" {
 			res.Failed = append(res.Failed, p)
 			res.Errors = append(res.Errors, reason)
 			snap.Skip(p, reason)
@@ -125,6 +130,16 @@ func (e *Engine) CleanTranscodeResidue(ctx context.Context, paths []string) (*Tr
 			res.Failed = append(res.Failed, p)
 			res.Errors = append(res.Errors, "文件已不存在或不是普通文件")
 			snap.Skip(p, "文件已不存在或不是普通文件")
+			continue
+		}
+		// v4.1.2：服务端执行前必须复核 24 小时阈值。预览清单可能过期，或调用方
+		// 直接 POST 任意满足命名规则的路径——刚写好、正在被别的进程使用的临时文件
+		// 若被搬进隔离区，等于把人家的数据挪走。mtime 未满阈值的一律拒绝。
+		if time.Since(fi.ModTime()) < transcodeResidueMinAge {
+			reason := "临时文件未满 24 小时，拒绝清理（可能仍在使用）"
+			res.Failed = append(res.Failed, p)
+			res.Errors = append(res.Errors, reason)
+			snap.Skip(p, reason)
 			continue
 		}
 		vol := e.VolumeOf(p)
@@ -143,13 +158,16 @@ func (e *Engine) CleanTranscodeResidue(ctx context.Context, paths []string) (*Tr
 		}
 		// 残留没有 hash 与分组，记录里留空；reason 单独标记，便于隔离区按来源筛选。
 		if aerr := e.st.AddTrash(ctx, p, dst, vol, "", "", "transcode_residue", fi.Size()); aerr != nil {
-			if rbErr := moveFile(dst, p); rbErr != nil {
-				snap.MarkProblem(p, opExpectRelocated, dst, "记录隔离区失败且回滚失败，文件可能已在隔离区但没有恢复记录："+rbErr.Error())
+			// v4.1.2：复用统一回滚，原父目录已不存在时不重建（见 rollbackTrashRecord）。
+			restored, note := e.rollbackTrashRecord(snap, p, dst, aerr)
+			msg := "记录隔离区失败：" + aerr.Error()
+			if restored {
+				msg = "记录隔离区失败，已回滚：" + aerr.Error()
 			} else {
-				snap.Skip(p, "记录隔离区失败，已回滚："+aerr.Error())
+				msg = "记录隔离区失败，" + note
 			}
 			res.Failed = append(res.Failed, p)
-			res.Errors = append(res.Errors, "记录隔离区失败："+aerr.Error())
+			res.Errors = append(res.Errors, msg)
 			continue
 		}
 		// 实时监控有可能把临时文件也索引进去，顺手清掉，避免留下幽灵行。

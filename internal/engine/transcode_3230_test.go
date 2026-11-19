@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,6 +92,11 @@ func TestCleanTranscodeResidueMovesUnindexed(t *testing.T) {
 	if err := os.WriteFile(residue, []byte("partial"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// v4.1.2：执行侧复核 24h 阈值，残留文件需模拟成 25 小时前写的。
+	old := time.Now().Add(-25 * time.Hour)
+	if err := os.Chtimes(residue, old, old); err != nil {
+		t.Fatal(err)
+	}
 	// 普通视频文件不能被这个接口顺手搬走。
 	normal := filepath.Join(dir, "keep.mp4")
 	if err := os.WriteFile(normal, []byte("keep"), 0o600); err != nil {
@@ -112,5 +118,35 @@ func TestCleanTranscodeResidueMovesUnindexed(t *testing.T) {
 	}
 	if _, err := os.Stat(normal); err != nil {
 		t.Fatalf("普通文件不应被动：%v", err)
+	}
+}
+
+// TestCleanTranscodeResidueRejectsFreshFile 回归 v4.1.2：前端传来的清单可能过期，
+// 或调用方直接 POST 任意路径。刚创建、可能仍在使用的临时文件必须被服务端拒绝，
+// 不能只凭名字含 _h265_tmp 就搬走。
+func TestCleanTranscodeResidueRejectsFreshFile(t *testing.T) {
+	e, _, root := newMoveDirEngine(t)
+	ctx := context.Background()
+	dir := filepath.Join(root, "videos")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fresh := filepath.Join(dir, "movie_h265_tmp999.mp4")
+	if err := os.WriteFile(fresh, []byte("being written"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := e.CleanTranscodeResidue(ctx, []string{fresh})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Moved) != 0 || len(res.Failed) != 1 {
+		t.Fatalf("未满 24h 的临时文件必须拒绝：%+v", res)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatalf("被拒文件必须留在原处：%v", err)
+	}
+	if len(res.Errors) != 1 || !strings.Contains(res.Errors[0], "24 小时") {
+		t.Fatalf("应给出 24h 拒绝原因，实际 %v", res.Errors)
 	}
 }

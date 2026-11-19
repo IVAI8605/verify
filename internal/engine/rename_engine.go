@@ -110,7 +110,7 @@ func (e *Engine) BuildRenamePlan(ctx context.Context, paths []string, methods []
 			plan = append(plan, item)
 			continue
 		}
-		if reason := e.protectedReason(p); reason != "" {
+		if reason := e.protectedReasonResolved(p); reason != "" {
 			item.Error = reason
 			plan = append(plan, item)
 			continue
@@ -554,7 +554,7 @@ func (e *Engine) ExecuteRenamePlan(ctx context.Context, plan []RenamePlanItem, m
 			exec = append(exec, it)
 			continue
 		}
-		if reason := e.protectedReason(it.OldPath); reason != "" {
+		if reason := e.protectedReasonResolved(it.OldPath); reason != "" {
 			it.Error = reason
 			exec = append(exec, it)
 			continue

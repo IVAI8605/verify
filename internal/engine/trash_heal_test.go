@@ -39,8 +39,12 @@ func TestHealTrashRowsKeepsRecordsWhenVolumeUnmounted(t *testing.T) {
 		t.Fatalf("卷不可信时必须保留记录，实际保留 %d 条", len(kept))
 	}
 
-	// 隔离目录出现后，才允许把「文件确实不在了」的记录清掉。
+	// 隔离目录出现、且批次目录仍在（用户只删了文件）后，才允许清掉幽灵行。
+	// v4.1.2：批次目录也要建出来——目录整体被改名时文件其实还在，不能误删记录。
 	if err := os.MkdirAll(filepath.Join(vol, ".verify-trash"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(vol, ".verify-trash", "2026-11-10"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	rows2, err := st.ListTrash(ctx)

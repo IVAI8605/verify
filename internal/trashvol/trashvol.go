@@ -47,8 +47,9 @@ func VolumeTrusted(vol string) bool {
 
 // RowRemovable 报告一条隔离记录能否安全删除。
 //
-// 只有同时满足三点才返回 true：隔离文件确实不存在、能定位到所属卷、该卷可信。
-// 其它任何情况（文件还在、Stat 报非 ENOENT、路径不在卷内、卷不可信）一律保留。
+// 只有同时满足四点才返回 true：隔离文件确实不存在、能定位到所属卷、该卷可信、
+// 且隔离文件所在的批次目录仍然存在。其它任何情况（文件还在、Stat 报非 ENOENT、
+// 路径不在卷内、卷不可信、批次目录整体消失）一律保留。
 func RowRemovable(trashPath string, vols []string) bool {
 	if trashPath == "" {
 		return false
@@ -60,5 +61,17 @@ func RowRemovable(trashPath string, vols []string) bool {
 	if vol == "" {
 		return false
 	}
-	return VolumeTrusted(vol)
+	if !VolumeTrusted(vol) {
+		return false
+	}
+	// v4.1.2：隔离目录是「.verify-trash/<日期>/<原相对路径>/<文件>」。日期目录
+	// 就在用户可见的卷上，外部进程或用户可能把它改名/搬走（文件其实还在新目录里）。
+	// 此时精确路径 Lstat 也是 ENOENT、卷根 .verify-trash 也还在，旧判定会误删整批记录，
+	// 让文件变成「不在隔离区列表里」的孤儿，恢复线索永久丢失。
+	// 文件被单独删掉时父目录仍在（正常幽灵行，照常清理）；父目录整体消失则一律保留。
+	parent := filepath.Dir(trashPath)
+	if fi, err := os.Stat(parent); err != nil || !fi.IsDir() {
+		return false
+	}
+	return true
 }

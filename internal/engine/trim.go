@@ -304,7 +304,7 @@ func (e *Engine) trimOne(ctx context.Context, j TrimJob) (*TrimDone, string) {
 	done := &TrimDone{Path: j.Path, Output: out, Duration: od}
 	// 替换原文件（设计文档 16.5.6，默认关）：原文件走 trash 通道 → rename 顶替 → 失败回滚
 	if j.Replace {
-		if reason := e.protectedReason(j.Path); reason != "" {
+		if reason := e.protectedReasonResolved(j.Path); reason != "" {
 			// 决策 B1：保护目录禁止替换，保留 _trimmed 新文件（不算失败）
 			return done, ""
 		}
@@ -373,7 +373,7 @@ func (e *Engine) trimCheck(j TrimJob) string {
 		return "裁剪点过于接近片尾"
 	}
 	if j.Replace {
-		if reason := e.protectedReason(j.Path); reason != "" {
+		if reason := e.protectedReasonResolved(j.Path); reason != "" {
 			return reason + "（保护目录内只能生成 _trimmed 新文件，不能替换原文件）"
 		}
 	}
