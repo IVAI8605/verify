@@ -284,7 +284,11 @@ func (e *Engine) runHealth(ctx context.Context, kind health.Kind, taskID int64, 
 		}
 	}
 
-	candidates, walkErr := e.collectHealthCandidates(ctx, roots, kind)
+	grouped, walkErr := e.collectHealthCandidateGroups(ctx, roots, kind)
+	var candidates []string
+	for _, g := range grouped {
+		candidates = append(candidates, g...)
+	}
 	if walkErr != nil && len(candidates) == 0 {
 		e.finishHealth(kind, taskID, HealthFailed, 0, 0, 0, "遍历目录失败: "+walkErr.Error())
 		return
@@ -304,12 +308,36 @@ func (e *Engine) runHealth(ctx context.Context, kind health.Kind, taskID int64, 
 		}
 		skipped := len(candidates) - len(kept)
 		candidates = kept
+		// 续跑过滤后同步重建分组，保证按盘并行的候选与 candidates 一致。
+		for gi := range grouped {
+			gk := grouped[gi][:0]
+			for _, p := range grouped[gi] {
+				if !done[p] {
+					gk = append(gk, p)
+				}
+			}
+			grouped[gi] = gk
+		}
 		if skipped > 0 {
 			applog.Info("损坏视频检测续跑：跳过已出结论的 %d 个文件", skipped)
 		}
 	}
 	if opt.Limit > 0 && len(candidates) > opt.Limit {
 		candidates = candidates[:opt.Limit]
+		// 同步截断分组，保证按盘并行的候选与 candidates 完全一致（否则进度会超过 total）。
+		keep := make(map[string]bool, len(candidates))
+		for _, p := range candidates {
+			keep[p] = true
+		}
+		for gi := range grouped {
+			gk := grouped[gi][:0]
+			for _, p := range grouped[gi] {
+				if keep[p] {
+					gk = append(gk, p)
+				}
+			}
+			grouped[gi] = gk
+		}
 	}
 	e.setHealthTotal(taskID, int64(len(candidates)))
 
@@ -362,69 +390,89 @@ func (e *Engine) runHealth(ctx context.Context, kind health.Kind, taskID int64, 
 		}
 	}
 
-	jobs := make(chan string)
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for path := range jobs {
-				if ctx.Err() != nil {
-					return
-				}
-				// v3.10.10（第七轮 P1-5）：健康探测也走全局槽位。
-				// 排队时间不计入探测超时，避免 CPU 被视频分析饿住后把文件误判成「疑似损坏」。
-				// v3.12.0：损坏探测会调 ffmpeg，先拿健康侧互斥位（视频/片头/裁剪/转码让路），
-				// 再拿重任务槽位；顺序反了会和 ffmpeg 任务互相等（一边握槽位等对方，一边握互斥位等槽位）。
-				probe := kind == health.KindBroken
-				if probe && !e.acquireHealthProbe(ctx) {
-					return
-				}
-				if !e.acquireHeavy(ctx) {
-					if probe {
-						e.releaseHealthProbe()
-					}
-					return
-				}
-				res, entry, err := e.checkOne(ctx, kind, path, opt, probeCache)
-				e.releaseHeavy()
+	// v4.0.3：与全量检测同口径，按物理卷分组探测，每盘独立队列与路数。
+	counts := make([]int, len(grouped))
+	for i, g := range grouped {
+		counts[i] = len(g)
+	}
+	perDisk := healthGroupWorkers(counts, workers)
+	applog.Info("健康探测：%d 个物理卷分组，各组路数 %v（总 %d）", len(grouped), perDisk, sumInts(perDisk))
+
+	worker := func(jobs <-chan string) {
+		for path := range jobs {
+			if ctx.Err() != nil {
+				return
+			}
+			// v3.10.10（第七轮 P1-5）：健康探测也走全局槽位。
+			// 排队时间不计入探测超时，避免 CPU 被视频分析饿住后把文件误判成「疑似损坏」。
+			// v3.12.0：损坏探测会调 ffmpeg，先拿健康侧互斥位（视频/片头/裁剪/转码让路），
+			// 再拿重任务槽位；顺序反了会和 ffmpeg 任务互相等（一边握槽位等对方，一边握互斥位等槽位）。
+			probe := kind == health.KindBroken
+			if probe && !e.acquireHealthProbe(ctx) {
+				return
+			}
+			if !e.acquireHeavy(ctx) {
 				if probe {
 					e.releaseHealthProbe()
 				}
-				if err != nil {
-					atomic.AddInt64(&errCnt, 1)
-				}
-				if res != nil || entry != nil {
-					mu.Lock()
-					if res != nil {
-						results = append(results, *res)
-						atomic.AddInt64(&hitCnt, 1)
-					}
-					if entry != nil {
-						probed = append(probed, *entry)
-					}
-					full := len(results)+len(probed) >= healthFlushBatch
-					mu.Unlock()
-					if full {
-						flush()
-					}
-				}
-				n := atomic.AddInt64(&procssd, 1)
-				e.setHealthProgress(taskID, n, path)
-				publish(false)
+				return
 			}
-		}()
-	}
-
-feed:
-	for _, p := range candidates {
-		select {
-		case <-ctx.Done():
-			break feed
-		case jobs <- p:
+			res, entry, err := e.checkOne(ctx, kind, path, opt, probeCache)
+			e.releaseHeavy()
+			if probe {
+				e.releaseHealthProbe()
+			}
+			if err != nil {
+				atomic.AddInt64(&errCnt, 1)
+			}
+			if res != nil || entry != nil {
+				mu.Lock()
+				if res != nil {
+					results = append(results, *res)
+					atomic.AddInt64(&hitCnt, 1)
+				}
+				if entry != nil {
+					probed = append(probed, *entry)
+				}
+				full := len(results)+len(probed) >= healthFlushBatch
+				mu.Unlock()
+				if full {
+					flush()
+				}
+			}
+			n := atomic.AddInt64(&procssd, 1)
+			e.setHealthProgress(taskID, n, path)
+			publish(false)
 		}
 	}
-	close(jobs)
+
+	var wg sync.WaitGroup
+	for gi, list := range grouped {
+		if len(list) == 0 || perDisk[gi] <= 0 {
+			continue
+		}
+		jobs := make(chan string)
+		for k := 0; k < perDisk[gi]; k++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				worker(jobs)
+			}()
+		}
+		// 每盘一个喂料协程：该盘喂完即关闭自己的通道，不影响其它盘。
+		wg.Add(1)
+		go func(list []string, jobs chan string) {
+			defer wg.Done()
+			defer close(jobs)
+			for _, p := range list {
+				select {
+				case <-ctx.Done():
+					return
+				case jobs <- p:
+				}
+			}
+		}(list, jobs)
+	}
 	wg.Wait()
 
 	canceled := ctx.Err() != nil
@@ -552,7 +600,14 @@ func (e *Engine) checkOne(ctx context.Context, kind health.Kind, path string, op
 //
 // v3.10.2：按物理卷并行遍历。不同硬盘各自一个 goroutine，同盘上的多个挂载点
 // 合并成一组串行，避免同盘争抢；结果按分组顺序合并，保证同一份数据每次顺序一致。
-func (e *Engine) collectHealthCandidates(ctx context.Context, roots []string, kind health.Kind) ([]string, error) {
+// collectHealthCandidateGroups 按物理卷分组返回候选（v4.0.3）。
+//
+// 与展平版 collectHealthCandidates 同一套遍历逻辑，但**保留分组**：
+// 每块物理盘一个列表，供调用方给每盘独立分配并发。原因（真机实测）：
+// 全局共享一个 worker 池时，4 路 worker 可能恰好都压在同一块盘的大文件上，
+// 该盘 IO 打满、其它盘干等（CPU 占用反而很低）。按盘分组后每盘都有独立队列，
+// 多盘同时推进，总吞吐由「最慢的盘」而不是「最慢的 4 个文件」决定。
+func (e *Engine) collectHealthCandidateGroups(ctx context.Context, roots []string, kind health.Kind) ([][]string, error) {
 	groups := deviceGroups(roots)
 	parts := make([][]string, len(groups))
 	errs := make([]error, len(groups))
@@ -601,15 +656,79 @@ func (e *Engine) collectHealthCandidates(ctx context.Context, roots []string, ki
 	}
 	wg.Wait()
 
-	var out []string
 	var firstErr error
 	for i := range parts {
-		out = append(out, parts[i]...)
 		if firstErr == nil && errs[i] != nil {
 			firstErr = errs[i]
 		}
 	}
-	return out, firstErr
+	return parts, firstErr
+}
+
+// sumInts 求和，仅用于日志展示各组路数总量。
+func sumInts(xs []int) int {
+	n := 0
+	for _, x := range xs {
+		n += x
+	}
+	return n
+}
+
+// collectHealthCandidates 返回展平后的候选列表（保留给只需要一份列表的调用方）。
+func (e *Engine) collectHealthCandidates(ctx context.Context, roots []string, kind health.Kind) ([]string, error) {
+	groups, err := e.collectHealthCandidateGroups(ctx, roots, kind)
+	var out []string
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return out, err
+}
+
+// healthGroupWorkers 给每个物理卷分组分配探测路数（v4.0.3）。
+//
+// 策略：每组至少 1 路（保证每块盘都在扫，不会被别的盘抢光）；
+// 余下路数按各组候选量比例分配；盘数多于总路数时每盘 1 路（宁可超订也要每盘都有进度）。
+func healthGroupWorkers(counts []int, base int) []int {
+	out := make([]int, len(counts))
+	if len(out) == 0 {
+		return out
+	}
+	for i := range out {
+		out[i] = 1
+	}
+	remain := base - len(out)
+	if remain <= 0 {
+		return out
+	}
+	total := 0
+	for _, c := range counts {
+		total += c
+	}
+	if total <= 0 {
+		for i := 0; remain > 0; i = (i + 1) % len(out) {
+			out[i]++
+			remain--
+		}
+		return out
+	}
+	for i, c := range counts {
+		out[i] += remain * c / total
+	}
+	used := 0
+	for _, n := range out {
+		used += n
+	}
+	for used < base {
+		idx := 0
+		for i, c := range counts {
+			if c > counts[idx] {
+				idx = i
+			}
+		}
+		out[idx]++
+		used++
+	}
+	return out
 }
 
 // firstReason 取首个原因作为机器标识，detail 里保留全部原因的说明。

@@ -127,7 +127,7 @@ ffmpeg -hide_banner -encoders | grep qsv
 
 ## 版本
 
-完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v4.0.2** —— UI 令牌收口：`styles.css` 与前端脚本里的裸颜色、裸字号全部收敛到 `:root` 语义令牌（新增 `--text-2xs`/`--text-control`/`--text-chart-total`/`--text-chart-sub` 与 `--shadow-to-top`/`--shadow-tip`），零构建、零运行时依赖形态不变。上一版 v4.0.1 修复数据安全检查 5 项（永久删除/清空补写结果审计、请求取消不再误报「索引中不存在」、`GET /api/trash` 与导出退回纯读、哈希回写前重新 Lstat 复核、隔离失败回滚不重建已删目录）。
+完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v4.1.0** —— 文件健康检测改为**按物理盘并行探测**（每块盘独立队列与并发路数，修掉「一块盘 IO 打满、其它盘干等」）。上一版 v4.0.2 把 `styles.css` 与前端脚本里的裸颜色、裸字号全部收敛到 `:root` 语义令牌。
 
 ## 维护者 / Maintainer
 

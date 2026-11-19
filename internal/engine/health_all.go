@@ -81,7 +81,11 @@ func (e *Engine) runHealthAll(ctx context.Context, taskID int64, opt HealthOptio
 	// 取消或写库失败时保留旧行，宁可多留也不丢结论。
 	startedAt := time.Now().Unix()
 
-	files, walkErr := e.collectHealthCandidates(ctx, roots, health.KindAll)
+	grouped, walkErr := e.collectHealthCandidateGroups(ctx, roots, health.KindAll)
+	var files []string
+	for _, g := range grouped {
+		files = append(files, g...)
+	}
 	if walkErr != nil && len(files) == 0 {
 		e.finishHealth(health.KindAll, taskID, HealthFailed, 0, 0, 0, "遍历目录失败: "+walkErr.Error())
 		return
@@ -182,48 +186,71 @@ func (e *Engine) runHealthAll(ctx context.Context, taskID int64, opt HealthOptio
 		}
 	}
 
-	jobs := make(chan string)
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for path := range jobs {
-				if ctx.Err() != nil {
-					return
-				}
-				res, entry, err := e.checkOneAll(ctx, path, opt, probeCache)
-				if err != nil {
-					atomic.AddInt64(&detectErr, 1)
-				}
-				if len(res) > 0 || entry != nil {
-					mu.Lock()
-					results = append(results, res...)
-					if entry != nil {
-						probed = append(probed, *entry)
-					}
-					full := len(results)+len(probed) >= healthFlushBatch
-					mu.Unlock()
-					if full {
-						flush()
-					}
-				}
-				n := atomic.AddInt64(&procssd, 1)
-				e.setHealthProgress(taskID, n, path)
-				publish(false)
-			}
-		}()
+	// v4.0.3：按物理卷分组探测，每盘独立队列与独立路数（healthGroupWorkers）。
+	// 旧实现所有盘共用一个 jobs 通道 + 全局 worker 池，4 路 worker 会恰好压在同一块盘的
+	// 大文件上：该盘 IO 打满、其它盘干等，CPU 反而闲着。分组后每盘都有进度，
+	// 总吞吐由「最慢的盘」决定，而不是「最慢的几个文件」。
+	counts := make([]int, len(grouped))
+	for i, g := range grouped {
+		counts[i] = len(g)
 	}
+	perDisk := healthGroupWorkers(counts, workers)
+	applog.Info("健康全量探测：%d 个物理卷分组，各组路数 %v（总 %d）", len(grouped), perDisk, sumInts(perDisk))
 
-feed:
-	for _, p := range files {
-		select {
-		case <-ctx.Done():
-			break feed
-		case jobs <- p:
+	worker := func(jobs <-chan string) {
+		for path := range jobs {
+			if ctx.Err() != nil {
+				return
+			}
+			res, entry, err := e.checkOneAll(ctx, path, opt, probeCache)
+			if err != nil {
+				atomic.AddInt64(&detectErr, 1)
+			}
+			if len(res) > 0 || entry != nil {
+				mu.Lock()
+				results = append(results, res...)
+				if entry != nil {
+					probed = append(probed, *entry)
+				}
+				full := len(results)+len(probed) >= healthFlushBatch
+				mu.Unlock()
+				if full {
+					flush()
+				}
+			}
+			n := atomic.AddInt64(&procssd, 1)
+			e.setHealthProgress(taskID, n, path)
+			publish(false)
 		}
 	}
-	close(jobs)
+
+	var wg sync.WaitGroup
+	for gi, list := range grouped {
+		if len(list) == 0 || perDisk[gi] <= 0 {
+			continue
+		}
+		jobs := make(chan string)
+		for k := 0; k < perDisk[gi]; k++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				worker(jobs)
+			}()
+		}
+		// 每盘一个喂料协程：该盘喂完即关闭自己的通道，不影响其它盘。
+		wg.Add(1)
+		go func(list []string, jobs chan string) {
+			defer wg.Done()
+			defer close(jobs)
+			for _, p := range list {
+				select {
+				case <-ctx.Done():
+					return
+				case jobs <- p:
+				}
+			}
+		}(list, jobs)
+	}
 	wg.Wait()
 
 	status := HealthDone

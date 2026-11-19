@@ -1734,8 +1734,9 @@ function healthConfirm(title, paths, action){
 // 中途出错也能保留已完成的部分，并给出准确的「成功/失败」数字。
 // v3.19.0：分批循环、暂停 / 取消、进度卡与完成页统一走 helper.js 的 runBatchedOp，
 // 本函数只保留健康页特有的对账合并与任务号收集。
-async function healthRunBatches(label, paths, call){
+async function healthRunBatches(label, paths, call, batchSize){
   const h = healthState();
+  if (!batchSize || batchSize <= 0) batchSize = HEALTH_OP_BATCH;
   // 确认页先关掉，进度卡片才露得出来；同时把视图滚回顶部，避免用户在表格中部看不到进度。
   closeModal();
   const scroller = document.querySelector('.tscroll');
@@ -1746,7 +1747,7 @@ async function healthRunBatches(label, paths, call){
   // 这里把每批的任务号都收起来，撤销时逐个回放。
   const taskIds = [];
   const op = await runBatchedOp({
-    id: 'health', label, items: paths, batchSize: HEALTH_OP_BATCH,
+    id: 'health', label, items: paths, batchSize: batchSize,
     // v3.10.5：每批一份对账报告，这里边跑边合并，完成页统一展示差异。
     op: { reconcile: { checked: 0, mismatched: 0, items: [], truncated: false, advice: '' } },
     call: async (chunk, o) => {
