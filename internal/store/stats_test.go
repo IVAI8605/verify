@@ -47,6 +47,38 @@ func TestPathStatsCountsSubtree(t *testing.T) {
 	}
 }
 
+// TestPathStatsChineseDirectory 回归 v4.1.1：substr 的字节数/字符数口径不一致。
+// prefix 在 Go 里是字节数，SQLite 的 substr 按字符算；中文目录下会把子目录文件漏掉。
+func TestPathStatsChineseDirectory(t *testing.T) {
+	s := openHealthStore(t)
+	ctx := context.Background()
+	cases := []struct {
+		path, volume string
+		size         int64
+	}{
+		{"/vol1/电影/a.mkv", "/vol1", 10},
+		{"/vol1/电影/子目录/b.mkv", "/vol1", 20},
+		{"/vol1/电影/子目录/更深/c.mkv", "/vol1", 30},
+		{"/vol1/音乐/d.mp3", "/vol1", 40},
+	}
+	for _, c := range cases {
+		if _, err := s.UpsertOne(ctx, FileInfo{
+			Path: c.path, Volume: c.volume, Name: filepath.Base(c.path), Ext: filepath.Ext(c.path),
+			Size: c.size, Mtime: 1, Ctime: 1,
+		}, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files, bytes, err := s.PathStats(ctx, "/vol1/电影")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files != 3 || bytes != 60 {
+		t.Fatalf("中文目录应统计 3 个文件 / 60 字节，实际 %d / %d", files, bytes)
+	}
+}
+
 // TestCountsExactWasteUsesAlloc 验证可回收空间按实际占用（alloc）计算：
 // 稀疏文件逻辑 4GiB 但只占 1MiB，不能再按逻辑大小虚报；旧库 alloc=0 回退 size。
 func TestCountsExactWasteUsesAlloc(t *testing.T) {

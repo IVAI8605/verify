@@ -2254,6 +2254,12 @@ func parseTrashCursor(s string) (at, id int64, ok bool) {
 	if err != nil {
 		return 0, 0, false
 	}
+	// v4.1.1：本服务生成的游标里 deleted_at 是秒级时间戳、id 是自增主键，
+	// 两者都恒为正数。负数或 0 是伪造/损坏的游标（afterAt=0 又是「第一页」哨兵，
+	// 会让 0:5 静默返回第一页），必须拒绝，否则 Web 层拿不到 ErrTrashCursor、返不出 400。
+	if at <= 0 || id <= 0 {
+		return 0, 0, false
+	}
 	return at, id, true
 }
 

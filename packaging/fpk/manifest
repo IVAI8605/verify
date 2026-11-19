@@ -1,5 +1,5 @@
 appname=verify
-version=4.1.0
+version=4.1.1
 display_name=查重助手
 desc=飞牛 NAS 重复文件清理与实时查重助手：按文件内容精确查重、同名文件分组、视频相似检测、相同片头检测（1–300 秒可调），支持隔离区恢复与 Duplicate Cleaner 兼容 CSV 导出。视频分析复用系统 FFmpeg，可选用 Intel 核显 QSV 硬解加速。
 platform=x86

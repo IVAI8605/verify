@@ -101,16 +101,22 @@ func (e *Engine) RenameGroupTo(ctx context.Context, basePath string, targets []s
 			res.Errors[t] = renameFailText(err)
 			continue
 		}
-		// v3.10.8（P2-2）：先删索引再标记，索引删除失败时 MarkProblem 的标记才不会被 MarkMoved 覆盖
-		e.dropIndexPath(wctx, snap, t)
+		// v4.1.1：改名只动 files 的 path/name/ext，不再「删旧行 + UpdatePath 建新行」。
+		// 重建会丢掉挂在 files.id 上的用户打标、探测缓存与媒体指纹，还会让内容
+		// 没变的文件被重新排队分析。与 RenameOne 同一口径（AGENTS.md 改名四步模板）。
+		// snap.MarkMoved 仍要在前，索引更新失败时对账才不会误判磁盘移动成功。
 		snap.MarkMoved(t, newPath, opExpectRenamed)
+		if missing, ierr := e.st.RenameFilePathsBatch(wctx, [][2]string{{t, newPath}}); ierr != nil {
+			applog.Warn("改名已完成，但索引更新失败：%s（%v）", newPath, ierr)
+		} else if len(missing) > 0 {
+			applog.Info("改名后的文件不在索引中（零字节或尚未扫描）：%s", newPath)
+		}
 		if err := e.st.AddAudit(wctx, store.AuditEntry{TaskID: taskID, Operation: "group_rename", OriginalPath: t, NewPath: newPath}); err != nil {
 			applog.Warn("改名已完成，但操作记录写入失败：%s → %s（%v）", t, newPath, err)
 		}
 		if err := e.st.DropHealthByPath(wctx, t); err != nil {
 			applog.Warn("改名已完成，但旧路径健康记录删除失败：%s（%v）", t, err)
 		}
-		e.UpdatePath(newPath)
 		e.UpdatePath(filepath.Dir(t))
 		res.Done = append(res.Done, RenameDone{From: t, To: newPath})
 	}

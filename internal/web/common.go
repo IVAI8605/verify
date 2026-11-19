@@ -152,18 +152,22 @@ func groupQuery(r *http.Request, cfg *config.Config) store.GroupQuery {
 	tagName := strings.TrimSpace(r.URL.Query().Get("tag_name"))
 	tagValue := strings.TrimSpace(r.URL.Query().Get("tag_value"))
 	return store.GroupQuery{
-		MinSize:          minSize,
-		MaxSize:          maxKB * 1024,
-		Ext:              strings.TrimSpace(r.URL.Query().Get("ext")),
-		Exts:             exts,
-		Keyword:          strings.TrimSpace(r.URL.Query().Get("q")),
-		Since:            sinceMs * int64(time.Millisecond),
-		Until:            untilMs * int64(time.Millisecond),
-		Sort:             sortKey,
-		Order:            order,
-		Roots:            cfg.Volumes,
-		Page:             page,
-		PageSize:         pageSize,
+		MinSize:  minSize,
+		MaxSize:  maxKB * 1024,
+		Ext:      strings.TrimSpace(r.URL.Query().Get("ext")),
+		Exts:     exts,
+		Keyword:  strings.TrimSpace(r.URL.Query().Get("q")),
+		Since:    sinceMs * int64(time.Millisecond),
+		Until:    untilMs * int64(time.Millisecond),
+		Sort:     sortKey,
+		Order:    order,
+		Roots:    cfg.Volumes,
+		Page:     page,
+		PageSize: pageSize,
+		// v4.1.1：交互页上限已放宽到 1000，这里同步告诉 store 放宽单页 cap，
+		// 否则 q.limit() 仍按默认 200 截断，page_size=1000 只是回显、实际只给 200 条。
+		// 导出/报告路径会在后面把 MaxGroups 覆盖成更大值（reportMaxGroups+1）。
+		MaxGroups:        1000,
 		DateOnly:         dateOnly,
 		SameDrive:        sameDrive,
 		MaxDurDiff:       maxDurDiff,

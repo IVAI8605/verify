@@ -281,6 +281,10 @@ func (e *Engine) runHealth(ctx context.Context, kind health.Kind, taskID int64, 
 	if len(keepRows) > 0 {
 		if err := e.st.AppendHealthResults(context.Background(), string(kind), keepRows); err != nil {
 			applog.Warn("回写已完成结果失败（%s）: %v", kind.Label(), err)
+			// v4.1.1：旧行已被 ClearHealthResults 删掉，回写又失败。若仍保留 done，
+			// 本轮会把这些路径全部跳过 → 旧结论没了、新结论没写、这轮也不探测，
+			// 用户结论凭空消失。清空 done 让本轮重新探测，宁可多算也别丢结论。
+			done = nil
 		}
 	}
 
@@ -324,20 +328,10 @@ func (e *Engine) runHealth(ctx context.Context, kind health.Kind, taskID int64, 
 	}
 	if opt.Limit > 0 && len(candidates) > opt.Limit {
 		candidates = candidates[:opt.Limit]
-		// 同步截断分组，保证按盘并行的候选与 candidates 完全一致（否则进度会超过 total）。
-		keep := make(map[string]bool, len(candidates))
-		for _, p := range candidates {
-			keep[p] = true
-		}
-		for gi := range grouped {
-			gk := grouped[gi][:0]
-			for _, p := range grouped[gi] {
-				if keep[p] {
-					gk = append(gk, p)
-				}
-			}
-			grouped[gi] = gk
-		}
+		// v4.1.1：按展平前缀顺序切分组，而不是用路径集合过滤。
+		// 多个扫描根存在包含关系且落在不同 st_dev 时，同一路径会出现在两个组；
+		// 用 keep[p] 集合匹配会让两组副本都留下，使探测数超过 total、进度 >100%。
+		grouped = truncateHealthGroups(grouped, opt.Limit)
 	}
 	e.setHealthTotal(taskID, int64(len(candidates)))
 
@@ -672,6 +666,33 @@ func sumInts(xs []int) int {
 		n += x
 	}
 	return n
+}
+
+// truncateHealthGroups 按「展平后的前缀」截断分组，只保留前 limit 个候选。
+//
+// 分组是按物理卷收集的有序列表，展平顺序就是 candidates 的顺序。截断必须按这个
+// 顺序切：顺序遍历各分组，每组取 min(len(g), remaining)，remaining 归零后清空后续组。
+// 不能用「路径集合」去匹配——多个扫描根重叠（如 /vol1 与其下的 /vol1/usb 挂载点）
+// 且落在不同 st_dev 时，同一路径会在两个组各出现一次，集合匹配会把两个副本都留下，
+// 导致实际探测数 > total，进度条超过 100%。
+func truncateHealthGroups(grouped [][]string, limit int) [][]string {
+	if limit <= 0 {
+		return grouped
+	}
+	remaining := limit
+	out := make([][]string, len(grouped))
+	for i, g := range grouped {
+		if remaining <= 0 {
+			out[i] = g[:0]
+			continue
+		}
+		if len(g) > remaining {
+			g = g[:remaining]
+		}
+		out[i] = g
+		remaining -= len(g)
+	}
+	return out
 }
 
 // collectHealthCandidates 返回展平后的候选列表（保留给只需要一份列表的调用方）。

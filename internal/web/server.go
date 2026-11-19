@@ -44,7 +44,7 @@ import (
 //go:embed ui
 var uiFS embed.FS
 
-const Version = "4.1.0"
+const Version = "4.1.1"
 
 type Server struct {
 	e       *engine.Engine
@@ -1746,28 +1746,6 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		cur.AccessToken = v
 	}
-	// v3.17.4（F-15）：ffmpeg / ffprobe 路径只接受可执行的普通文件，且不能在扫描卷内。
-	// 此前可以指向任意可执行文件，等于给设置页开了一个"换程序执行"的入口。
-	vols := cur.Volumes
-	if len(vols) == 0 {
-		vols = s.e.Volumes()
-	}
-	if body.FFmpeg != nil {
-		v := strings.TrimSpace(*body.FFmpeg)
-		if msg := checkToolPath("FFmpeg", v, vols); msg != "" {
-			writeJSON(w, http.StatusBadRequest, errorResponse{Error: msg})
-			return
-		}
-		cur.FFmpeg = v
-	}
-	if body.FFprobe != nil {
-		v := strings.TrimSpace(*body.FFprobe)
-		if msg := checkToolPath("FFprobe", v, vols); msg != "" {
-			writeJSON(w, http.StatusBadRequest, errorResponse{Error: msg})
-			return
-		}
-		cur.FFprobe = v
-	}
 	if body.FullRescanHours != nil {
 		cur.FullRescanHours = *body.FullRescanHours
 	}
@@ -1921,6 +1899,31 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Volumes != nil {
 		cur.Volumes = *body.Volumes
+	}
+	// v4.1.1：ffmpeg / ffprobe 路径校验必须放在本次 Volumes 应用之后。
+	// 此前用旧 cur.Volumes（或 s.e.Volumes()）校验，同一次请求里「换新扫描卷 + 把
+	// 工具程序放进新卷」能绕过「工具不能在扫描卷内」的约束——该目录随后会被扫描、
+	// 改名或隔离，执行入口就指向受管数据盘上的文件了。
+	// v3.17.4（F-15）：工具路径只接受可执行的普通文件，且不能在扫描卷内。
+	vols := cur.Volumes
+	if len(vols) == 0 {
+		vols = s.e.Volumes()
+	}
+	if body.FFmpeg != nil {
+		v := strings.TrimSpace(*body.FFmpeg)
+		if msg := checkToolPath("FFmpeg", v, vols); msg != "" {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: msg})
+			return
+		}
+		cur.FFmpeg = v
+	}
+	if body.FFprobe != nil {
+		v := strings.TrimSpace(*body.FFprobe)
+		if msg := checkToolPath("FFprobe", v, vols); msg != "" {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: msg})
+			return
+		}
+		cur.FFprobe = v
 	}
 	// 日志/缓存目录先验证可写，避免保存成功后才发现路径无效、日志或缩略图静默丢失。
 	// v3.10.4：实际切换放到配置落盘之后——先切日志再写盘失败会留下「日志搬走了、配置没保存」的错位。

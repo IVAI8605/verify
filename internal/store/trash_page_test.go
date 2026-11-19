@@ -69,7 +69,9 @@ func TestListTrashPageBadCursor(t *testing.T) {
 	ctx := context.Background()
 	s := openHealthStore(t)
 	seedTrashRows(t, s, [][2]int64{{1, 100}})
-	for _, c := range []string{"abc", "100", ":5", "x:5", "100:"} {
+	// v4.1.1：负数与 0 也必须拒绝——afterAt=0 是第一页哨兵，0:5 会静默返回第一页；
+	// "-1:-1" 会返回空页但仍是 200，Web 层拿不到 ErrTrashCursor 就返不出 400。
+	for _, c := range []string{"abc", "100", ":5", "x:5", "100:", "0:5", "-1:-1", "100:0", "100:-1", "0:0"} {
 		if _, err := s.ListTrashPage(ctx, c, 10); !errors.Is(err, ErrTrashCursor) {
 			t.Fatalf("游标 %q 应返回 ErrTrashCursor，实际 %v", c, err)
 		}
