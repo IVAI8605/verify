@@ -22,3 +22,15 @@ interface ResultColumn {
   align?: string;
   sort?: string;
 }
+
+// ── 写操作结果（POST /api/trash 等）────────────────────────────────────
+// 后端 engine.TrashResult：moved/failed/errors 是 []string，空结果可能为 null。
+// 与 TrashListResp（POST /api/trash 的 GET 列表响应）是两个不同接口。
+interface TrashResultResp {
+  moved: string[] | null;
+  failed: string[] | null;
+  errors: string[] | null;
+  unprocessed?: number;
+  conflict?: string;
+  reconcile?: any;
+}

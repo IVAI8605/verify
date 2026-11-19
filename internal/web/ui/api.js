@@ -1111,7 +1111,7 @@ async function bigTrashSel(){
       await runBatchedOp({
         id: 'big-trash', label: '移入隔离区', items: paths, batchSize: BIG_TRASH_BATCH,
         call: async (chunk) => {
-          const r = await postJSON('/api/trash', { paths: chunk });
+          const r = /** @type {TrashResultResp} */ (await postJSON('/api/trash', { paths: chunk }));
           moved = moved.concat(r.moved || []);
           if (r.reconcile) reconcile = mergeReconcile(reconcile, r.reconcile);
           // 批量接口 HTTP 200 也可能部分失败，按 items 统计成功与失败。
