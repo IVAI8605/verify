@@ -1025,8 +1025,8 @@ document.addEventListener('click', async (ev) => {
     const paths = currentSelectionPaths();
     if (!paths.length) { toast('先勾选要转换的文件', 'err'); return; }
     const html = `<div class="asec" data-sec-title="转换方向"><label class="rp-head" data-act="asec-fold" data-sec="转换方向" style="cursor:pointer"><span class="rp-arrow">▾</span>转换方向</label>
-      <label class="checkline" style="font-size:13px"><input type="radio" name="fjDir" value="s2t" checked> 简 → 繁（如：数据库 → 數據庫）</label>
-      <label class="checkline" style="font-size:13px"><input type="radio" name="fjDir" value="t2s"> 繁 → 简（如：資料庫 → 资料库）</label>
+      <label class="checkline" style="font-size:var(--text-control)"><input type="radio" name="fjDir" value="s2t" checked> 简 → 繁（如：数据库 → 數據庫）</label>
+      <label class="checkline" style="font-size:var(--text-control)"><input type="radio" name="fjDir" value="t2s"> 繁 → 简（如：資料庫 → 资料库）</label>
       <div class="hint">OpenCC 词典（纯 Go 内嵌，词级转换）；无中文字或已是目标体的文件自动跳过。冲突自动追加 _1；可整体撤销。注意：按路径引用的程序会断链。</div></div>
       <div class="pm-actions"><button class="btn ghost" data-act="modal-cancel">取消</button>
       <button class="btn primary" data-act="fanjian-run">确 认 转 换</button></div>`;

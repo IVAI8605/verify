@@ -1558,8 +1558,8 @@ function renderSearchPage(){
       <option value="wildcard"${st.mode==='wildcard'?' selected':''}>通配符 * ?</option>
       <option value="regex"${st.mode==='regex'?' selected':''}>正则</option>
     </select>
-    <label class="checkline" style="font-size:12px"><input type="checkbox" id="sCase"${st.caseSensitive?' checked':''}> 区分大小写</label>
-    <label class="checkline" style="font-size:12px" title="选中当前查询的全部结果，不只是已经滚动加载出来的行"><input type="checkbox" id="sSelAll"${st.selAll?' checked':''}> 全选全部结果</label>
+    <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" id="sCase"${st.caseSensitive?' checked':''}> 区分大小写</label>
+    <label class="checkline" style="font-size:var(--text-xs)" title="选中当前查询的全部结果，不只是已经滚动加载出来的行"><input type="checkbox" id="sSelAll"${st.selAll?' checked':''}> 全选全部结果</label>
     <button class="btn" data-act="search-add-rename">加入重命名列表（${searchSelCount()}）</button>
     <button class="btn ghost" data-act="search-clear-sel">清空选择</button>
     <span class="hint" id="sSelInfo"></span>

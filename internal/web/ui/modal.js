@@ -39,7 +39,7 @@ function assistBodyHtml(){
     <button class="btn ghost" data-act="assist-toggle">${S.assistOpen?'收起':'展开'}</button></div>`;
   if (!S.assistOpen) return head;
   const warn = allMarked.length ? `<div class="allwarn"><b>⚠ ${allMarked.length} 个组所有文件均被标记</b>
-    <div class="hint" style="color:#a61b1b">${allMarked.slice(0,5).map(x=>esc(x.name)).join('、')}${allMarked.length>5?' …':''}</div>
+    <div class="hint" style="color:var(--color-error)">${allMarked.slice(0,5).map(x=>esc(x.name)).join('、')}${allMarked.length>5?' …':''}</div>
     <button class="btn danger" data-act="assist-jump-allmarked">跳转到第一个全标记组</button></div>` : '';
   const prefs = S.prefs.map((p,i)=>`<div class="pref-row" draggable="true" data-pref-index="${i}" data-pref-key="${esc(p.key)}">
       <span class="drag">≡</span>
@@ -82,40 +82,40 @@ function assistBodyHtml(){
     <div class="asec" data-sec-title="筛选器"><label class="rp-head" data-act="filter-toggle" data-sec="筛选器" style="cursor:pointer"><span class="rp-arrow">${S.listFilter.open?'▾':'▸'}</span>筛选器<span class="spacer"></span><span class="hint">${S.listFilter.open?'收起':'展开'}</span></label>
       ${S.listFilter.open ? `<div>
         <div class="asrow" style="flex-wrap:wrap;gap:6px">
-          <label class="checkline" style="font-size:12px"><input type="checkbox" data-act="filter-set" data-k="marked"${S.listFilter.marked?' checked':''}> 已标记</label>
-          <label class="checkline" style="font-size:12px"><input type="checkbox" data-act="filter-set" data-k="unmarked"${S.listFilter.unmarked?' checked':''}> 未标记</label>
-          <label class="checkline" style="font-size:12px"><input type="checkbox" data-act="filter-set" data-k="protected"${S.listFilter.protected?' checked':''}> 已保护</label>
+          <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" data-act="filter-set" data-k="marked"${S.listFilter.marked?' checked':''}> 已标记</label>
+          <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" data-act="filter-set" data-k="unmarked"${S.listFilter.unmarked?' checked':''}> 未标记</label>
+          <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" data-act="filter-set" data-k="protected"${S.listFilter.protected?' checked':''}> 已保护</label>
         </div>
         <div class="asrow" style="flex-wrap:wrap;gap:6px">
-          <label class="checkline" style="font-size:12px"><input type="checkbox" data-act="filter-set" data-k="partial"${S.listFilter.partial?' checked':''}> 存在部分标记</label>
-          <label class="checkline" style="font-size:12px"><input type="checkbox" data-act="filter-set" data-k="allMarked"${S.listFilter.allMarked?' checked':''}> 全部已标记</label>
+          <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" data-act="filter-set" data-k="partial"${S.listFilter.partial?' checked':''}> 存在部分标记</label>
+          <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" data-act="filter-set" data-k="allMarked"${S.listFilter.allMarked?' checked':''}> 全部已标记</label>
         </div>
-        <label class="checkline" style="font-size:12px;margin-top:4px"><input type="checkbox" data-act="filter-adv"${S.listFilter.advOpen?' checked':''}> 高级条件</label>
+        <label class="checkline" style="font-size:var(--text-xs);margin-top:4px"><input type="checkbox" data-act="filter-adv"${S.listFilter.advOpen?' checked':''}> 高级条件</label>
         ${S.listFilter.advOpen ? `<div style="border-left:2px solid var(--line);padding-left:8px;margin-top:4px">
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>组内文件数</span><input id="fCountMin" data-act="filter-num" data-k="countMin" type="number" min="0" value="${esc(S.listFilter.countMin)}" style="width:64px" placeholder="从">
             <span>至</span><input id="fCountMax" data-act="filter-num" data-k="countMax" type="number" min="0" value="${esc(S.listFilter.countMax)}" style="width:64px" placeholder="至">
           </div>
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>组总大小(MB)</span><input id="fSizeMin" data-act="filter-num" data-k="sizeMin" type="number" min="0" value="${esc(S.listFilter.sizeMin)}" style="width:72px" placeholder="从">
             <span>至</span><input id="fSizeMax" data-act="filter-num" data-k="sizeMax" type="number" min="0" value="${esc(S.listFilter.sizeMax)}" style="width:72px" placeholder="至">
           </div>
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>单文件大小(MB)</span><input id="fFileMin" data-act="filter-num" data-k="fileMin" type="number" min="0" value="${esc(S.listFilter.fileMin)}" style="width:72px" placeholder="从">
             <span>至</span><input id="fFileMax" data-act="filter-num" data-k="fileMax" type="number" min="0" value="${esc(S.listFilter.fileMax)}" style="width:72px" placeholder="至">
           </div>
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>扩展名</span><input data-act="lf-input" data-k="exts" type="text" value="${esc(S.listFilter.exts)}" style="width:170px" placeholder="逗号分隔，如 jpg,png">
           </div>
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>关键词</span><input data-act="lf-input" data-k="q" type="text" value="${esc(S.listFilter.q)}" style="width:140px" placeholder="文件名包含">
           </div>
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>修改时间</span><input data-act="lf-input" data-k="since" type="date" value="${esc(S.listFilter.since)}" style="width:140px">
             <span>至</span><input data-act="lf-input" data-k="until" type="date" value="${esc(S.listFilter.until)}" style="width:140px">
-            <label class="checkline" style="font-size:12px;margin-left:4px"><input type="checkbox" data-act="filter-set" data-k="dateOnly"${S.listFilter.dateOnly?' checked':''}> 仅日期（忽略时分）</label>
+            <label class="checkline" style="font-size:var(--text-xs);margin-left:4px"><input type="checkbox" data-act="filter-set" data-k="dateOnly"${S.listFilter.dateOnly?' checked':''}> 仅日期（忽略时分）</label>
           </div>
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>时长容差(秒)</span><input data-act="lf-input" data-k="maxDurDiff" type="number" min="0" value="${esc(S.listFilter.maxDurDiff)}" style="width:80px" placeholder="不限">
             <span>同盘</span>
             <select data-act="lf-input" data-k="sameDrive" style="width:100px">
@@ -125,19 +125,19 @@ function assistBodyHtml(){
                 return `<option value="${esc(n)}"${S.listFilter.sameDrive===n?' selected':''}>${esc(parts[0]||n)}</option>`;
               }).join('')}
             </select>
-            <label class="checkline" style="font-size:12px"><input type="checkbox" data-act="filter-set" data-k="ignoreSameFolder"${S.listFilter.ignoreSameFolder?' checked':''}> 忽略同目录重复</label>
+            <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" data-act="filter-set" data-k="ignoreSameFolder"${S.listFilter.ignoreSameFolder?' checked':''}> 忽略同目录重复</label>
           </div>
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>文件夹名</span><input data-act="lf-input" data-k="folderName" type="text" value="${esc(S.listFilter.folderName)}" style="width:120px" placeholder="如 某剧集">
             <span>层级</span><input data-act="lf-input" data-k="folderDepth" type="number" min="0" max="50" value="${esc(S.listFilter.folderDepth)}" style="width:64px" placeholder="不限">
-            <span class="hint" style="font-size:12px">层级 0 表示任意层</span>
+            <span class="hint" style="font-size:var(--text-xs)">层级 0 表示任意层</span>
           </div>
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>大小容差(KB)</span><input data-act="lf-input" data-k="sizeTolKB" type="number" min="0" value="${esc(S.listFilter.sizeTolKB)}" style="width:88px" placeholder="不限">
-            <label class="checkline" style="font-size:12px"><input type="checkbox" data-act="filter-set" data-k="similarName"${S.listFilter.similarName?' checked':''}> 只保留文件名相似</label>
-            <label class="checkline" style="font-size:12px"><input type="checkbox" data-act="filter-set" data-k="crossDevice"${S.listFilter.crossDevice?' checked':''}> 标记另一设备也有的文件</label>
+            <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" data-act="filter-set" data-k="similarName"${S.listFilter.similarName?' checked':''}> 只保留文件名相似</label>
+            <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" data-act="filter-set" data-k="crossDevice"${S.listFilter.crossDevice?' checked':''}> 标记另一设备也有的文件</label>
           </div>
-          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:12px">
+          <div class="asrow" style="flex-wrap:wrap;gap:6px;font-size:var(--text-xs)">
             <span>标签</span>
             <select data-act="lf-input" data-k="tagName" style="width:110px">
               <option value="">不限</option>
@@ -145,7 +145,7 @@ function assistBodyHtml(){
             </select>
             <span>值</span><input data-act="lf-input" data-k="tagValue" type="text" value="${esc(S.listFilter.tagValue)}" style="width:130px" placeholder="留空表示任意值">
           </div>
-          <label class="checkline" style="font-size:12px"><input type="checkbox" data-act="filter-set" data-k="showAll"${S.listFilter.showAll?' checked':''}> 显示筛选组中的所有文件</label>
+          <label class="checkline" style="font-size:var(--text-xs)"><input type="checkbox" data-act="filter-set" data-k="showAll"${S.listFilter.showAll?' checked':''}> 显示筛选组中的所有文件</label>
         </div>` : ''}
         <div class="asrow" style="justify-content:center;margin-top:8px"><button class="btn ghost" data-act="filter-clear" style="padding:2px 12px">清除全部筛选</button></div>
         <div class="hint">大小/扩展名/关键词/修改时间由服务端过滤（重拉列表），标记/勾选只在筛选结果内生效</div>
@@ -204,7 +204,7 @@ function assistBodyHtml(){
         <button class="btn ghost" data-act="assist-invert">反转标记</button>
         <button class="btn ghost" data-act="assist-clear">取消全部标记</button>
       </div>
-      ${S.assistTruncated?`<div class="hint" style="color:#a61b1b">助手只覆盖 ${(S.assistCovered||groups.length).toLocaleString()} / ${(S.assistTotal||S.total||0).toLocaleString()} 组，未覆盖的分组不会被批量操作处理；请用筛选器收窄范围。</div>`:''}
+      ${S.assistTruncated?`<div class="hint" style="color:var(--color-error)">助手只覆盖 ${(S.assistCovered||groups.length).toLocaleString()} / ${(S.assistTotal||S.total||0).toLocaleString()} 组，未覆盖的分组不会被批量操作处理；请用筛选器收窄范围。</div>`:''}
     </div>`;
 }
 
@@ -374,7 +374,7 @@ function renderWizard(){
     <div class="warnbox" style="margin-top:14px">排除目录及其所有子目录都不会被扫描；「保护」写入全局保护文件夹（隔离/删除操作默认排除并二次提示）。目录树只显示你在应用内添加或浏览过的目录——先在飞牛系统设置给本应用授权，再把授权路径粘贴到输入框进入。</div>`;
   const ruleSummary = `${SEARCH_BASE_LABELS[r.base] || r.base}${(r.attrs||[]).length ? ' · ' + (r.attrs||[]).map(a => SEARCH_ATTR_LABELS[a] || a).join(' + ') : ''}${r.ignore_copy_names?' · 忽略副本':''}${r.ignore_same_folder?' · 忽略同目录':''}`;
   const step3 = `
-    <div class="warnbox" style="background:#f4f8ff;border-color:#d6e4ff;color:#245a9a">
+    <div class="warnbox" style="background:var(--color-accent-wash);border-color:var(--color-accent-edge);color:var(--color-accent-deep)">
       <b>搜索规则：</b>${esc(ruleSummary)}<br>
       <b>将计算：</b>${esc(bases.join('、') || '仅元数据')}<br>
       <b>扫描文件夹：</b>${w.scanDirs.length} 个<br>
@@ -618,8 +618,8 @@ function openTrimPanel(key){
   const cfgN = Number(S.introN || 10);
   const rows = files.map(f => `<tr><td class="fname">${esc(f.name)}</td><td class="num">${fmtDur(f.duration)}</td></tr>`).join('');
   const html = `<div class="asec" data-sec-title="裁剪模式"><label class="rp-head" data-act="asec-fold" data-sec="裁剪模式" style="cursor:pointer"><span class="rp-arrow">▾</span>裁剪模式</label>
-      <label class="checkline" style="font-size:13px"><input type="radio" name="trimMode" value="fast" checked> 快速（流复制，秒级；关键帧间隔过长时自动改用精确模式，可能多等一会）</label>
-      <label class="checkline" style="font-size:13px"><input type="radio" name="trimMode" value="precise"> 精确（重编码，帧级对齐，耗时长）</label>
+      <label class="checkline" style="font-size:var(--text-control)"><input type="radio" name="trimMode" value="fast" checked> 快速（流复制，秒级；关键帧间隔过长时自动改用精确模式，可能多等一会）</label>
+      <label class="checkline" style="font-size:var(--text-control)"><input type="radio" name="trimMode" value="precise"> 精确（重编码，帧级对齐，耗时长）</label>
     </div>
     <div class="asec" data-sec-title="裁剪点（秒）"><label class="rp-head" data-act="asec-fold" data-sec="裁剪点（秒）" style="cursor:pointer"><span class="rp-arrow">▾</span>裁剪点（秒）</label>
       <div class="asrow"><input id="trimOffset" type="number" min="1" step="1" value="${cfgN}" style="width:90px">
@@ -627,8 +627,8 @@ function openTrimPanel(key){
       <div class="hint">预填配置值 ${cfgN}（下界，实际片头可能更长）；探测用二分查找，精度 1 秒，结果按组缓存</div>
     </div>
     <div class="asec" data-sec-title="输出"><label class="rp-head" data-act="asec-fold" data-sec="输出" style="cursor:pointer"><span class="rp-arrow">▾</span>输出</label>
-      <label class="checkline" style="font-size:13px"><input type="checkbox" id="trimReplace"> 替换原文件（默认关：生成 &lt;主名&gt;_trimmed 新文件；开启后原文件进隔离区可恢复）</label>
-      <label class="checkline" style="font-size:13px"><input type="checkbox" id="trimSkipDone" checked> 跳过已裁剪的文件</label>
+      <label class="checkline" style="font-size:var(--text-control)"><input type="checkbox" id="trimReplace"> 替换原文件（默认关：生成 &lt;主名&gt;_trimmed 新文件；开启后原文件进隔离区可恢复）</label>
+      <label class="checkline" style="font-size:var(--text-control)"><input type="checkbox" id="trimSkipDone" checked> 跳过已裁剪的文件</label>
     </div>
     <div class="hint">组内 ${files.length} 个文件：${rows ? '' : ''}</div>
     <div class="pm-actions"><button class="btn ghost" data-act="modal-cancel">取消</button>

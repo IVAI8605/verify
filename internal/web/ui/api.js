@@ -1929,7 +1929,7 @@ async function saveSettings(){
     await refreshStatus();
     updateTabVisibility();
   } catch(e) {
-    if (saveHint) { saveHint.textContent = '保存失败'; saveHint.style.color = '#c0392b'; }
+    if (saveHint) { saveHint.textContent = '保存失败'; saveHint.style.color = 'var(--color-error)'; }
     toast(e.message, 'err');
   } finally {
     if (saveBtn) saveBtn.disabled = false;
@@ -2104,7 +2104,7 @@ async function retainSuggest(){
       files: (g.files || []).map(f => ({ path: f.path, name: f.name, size: f.size, width: f.width || 0, height: f.height || 0, bit_rate: f.bit_rate || 0, duration: f.duration || 0, mtime: f.mtime || 0 }))
     })) });
     S.retainSugs = r.suggestions || [];
-    const confBadge = { high: '<span class="badge" style="background:#e6f7ef;color:#059669">高置信</span>', medium: '<span class="badge" style="background:#fff7e6;color:#d97706">中置信</span>', low: '<span class="badge" style="background:#fee2e2;color:#dc2626">需人工</span>' };
+    const confBadge = { high: '<span class="badge" style="background:var(--color-ok-wash);color:var(--color-ok)">高置信</span>', medium: '<span class="badge" style="background:var(--color-warn-wash);color:var(--color-warn)">中置信</span>', low: '<span class="badge" style="background:var(--color-error-wash);color:var(--color-error)">需人工</span>' };
     const rows = S.retainSugs.map(sg => {
       const s = sg.suggestion;
       return '<tr><td>' + (confBadge[s.confidence] || '') + '</td><td class="mono">' + esc(s.retain.split('/').pop()) + '</td><td>' + esc(s.reason) + '</td></tr>';

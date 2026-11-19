@@ -1700,7 +1700,7 @@ function bindQuietHoursCheck(){
   el.addEventListener('input', () => {
     const ok = validQuietHours(el.value);
     hint.textContent = ok ? '区间内后台自动任务一律不启动；你手动点的扫描不受影响' : '格式应为 HH:MM-HH:MM，例如 23:00-07:00';
-    hint.style.color = ok ? '' : '#c0392b';
+    hint.style.color = ok ? '' : 'var(--color-error)';
   });
 }
 
