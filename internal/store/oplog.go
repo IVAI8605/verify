@@ -193,7 +193,8 @@ func (s *Store) PurgeOpsBefore(ctx context.Context, ts int64) (int64, error) {
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return 0, nil
+		// 吞掉会让调用方以为「成功清理了 0 条」，真实删除量永远对不上。
+		return 0, fmt.Errorf("统计清理条数：%w", err)
 	}
 	return n, nil
 }

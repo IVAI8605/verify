@@ -132,6 +132,14 @@ type statusUnauthResponse struct {
 	State   any    `json:"state,omitempty"`
 }
 
+// unauthStateResponse 是未登录时 /api/status 下发的进度摘要。
+// 只含两个非敏感字段：engine.State 的 Current / Message / LastError 会带卷内绝对路径，
+// 未授权访客不应读到；前端登录页只需要「是否还在跑、跑到哪个阶段」。
+type unauthStateResponse struct {
+	Running bool   `json:"running"`
+	Phase   string `json:"phase"`
+}
+
 // ── 搜索 ────────────────────────────────────────────────────────────────
 
 // tasksResponse 是 GET /api/tasks 的响应。
@@ -210,13 +218,13 @@ func (e searchNotReadyResponse) withError(clean string) any {
 // progress / counts / uncertain / probe_cache 的内部形状由 engine 与 store 决定，
 // 这里只给最外层容器做类型化。
 type healthStatusResponse struct {
-	Progress   any `json:"progress"`
-	Counts     any `json:"counts"`
-	Uncertain  any `json:"uncertain"`
-	FFmpeg     any `json:"ffmpeg"`
-	LastAudit  any `json:"last_audit"`
-	Auto       any `json:"auto"`
-	ProbeCache any `json:"probe_cache"`
+	Progress   any                `json:"progress"`
+	Counts     any                `json:"counts"`
+	Uncertain  any                `json:"uncertain"`
+	FFmpeg     any                `json:"ffmpeg"`
+	LastAudit  any                `json:"last_audit"`
+	Auto       any                `json:"auto"`
+	ProbeCache probeCacheResponse `json:"probe_cache"`
 }
 
 // healthResultsResponse 是 GET /api/health/results 的响应。
@@ -339,4 +347,12 @@ type trimProbeResponse struct {
 // trimLogResponse 是 POST /api/trim 的响应。
 type trimLogResponse struct {
 	Log []store.TrimLogEntry `json:"log"`
+}
+
+// probeCacheResponse 是健康页「探测缓存」统计（GET /api/health/status 的 probe_cache）。
+// 键名写进 struct 而不是 map 字面量：前端 settings.js 直接读 pc.total / pc.broken 拼提示，
+// 写在 map 里改键名编译器查不出、types.d.ts 也只能生成 probe_cache: any。
+type probeCacheResponse struct {
+	Total  int64 `json:"total"`
+	Broken int64 `json:"broken"`
 }

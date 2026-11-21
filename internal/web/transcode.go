@@ -138,5 +138,5 @@ func (s *Server) handleTranscodeResidueClean(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, toTrashResultResp(res))
 }

@@ -12,6 +12,7 @@ import (
 	"verify/internal/applog"
 	dictconv "verify/internal/engine/data"
 	"verify/internal/store"
+	"verify/internal/taskguard"
 )
 
 // 文件名繁简转换（v1.22 引入 §11，路线 A：纯 Go 词典 embed，无 cgo）。
@@ -36,6 +37,17 @@ type FanjianResult struct {
 // 前置校验同 v1.15：保护/隔离区拒绝；冲突追加 _1；audit operation='fanjian'。
 func (e *Engine) ConvertNames(ctx context.Context, paths []string, toTraditional bool) *FanjianResult {
 	res := &FanjianResult{Errors: map[string]string{}}
+	// 繁简改名一次可能改上万个文件，此前连 lockWrites 都没有：扫描、隔离、转码
+	// 都能与它同时动同一批文件与同一张 files 表。
+	rel, gerr := e.acquireTask(taskguard.KindRename, "繁简转换", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		for _, p := range paths {
+			res.Failed = append(res.Failed, p)
+			res.Errors[p] = gerr.Error()
+		}
+		return res
+	}
+	defer rel("done")
 	conv := dictconv.T2S()
 	if toTraditional {
 		conv = dictconv.S2T()
@@ -211,10 +223,16 @@ func uniquePathSkip(dir, name, exclude string) string {
 // UndoFanjian 撤销繁简转换任务（audit 逆序回放）。
 // failures 回传失败原因（v3.10.4）：原路径被占用时明确告知，不再静默覆盖。
 func (e *Engine) UndoFanjian(ctx context.Context, taskID int64) (done, failed int, failures []HealthOpItem, err error) {
+	rel, gerr := e.acquireTask(taskguard.KindRename, "撤销繁简转换", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		return 0, 0, nil, gerr
+	}
+	defer rel("done")
 	entries, err := e.st.ListAuditByTask(ctx, taskID)
 	if err != nil {
 		return 0, 0, nil, err
 	}
+	pairs := make([][2]string, 0, len(entries))
 	for i := len(entries) - 1; i >= 0; i-- {
 		a := entries[i]
 		if a.Operation != "fanjian" {
@@ -225,9 +243,11 @@ func (e *Engine) UndoFanjian(ctx context.Context, taskID int64) (done, failed in
 			failures = append(failures, HealthOpItem{Path: a.OriginalPath, NewPath: a.NewPath, Error: reason})
 			continue
 		}
-		e.dropIndexPath(ctx, nil, a.NewPath)
-		e.UpdatePath(a.OriginalPath)
+		pairs = append(pairs, [2]string{a.NewPath, a.OriginalPath})
 		done++
+	}
+	if len(pairs) > 0 {
+		e.syncMovedIndex(ctx, pairs)
 	}
 	if len(failures) > 0 {
 		applog.Warn("撤销繁简转换失败 %d 个；首个路径 %s：%s", len(failures), failures[0].Path, failures[0].Error)

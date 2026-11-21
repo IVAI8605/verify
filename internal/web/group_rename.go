@@ -29,7 +29,7 @@ func (s *Server) handleGroupRename(w http.ResponseWriter, r *http.Request) {
 	if s.scanBusy(w) {
 		return
 	}
-	writeJSON(w, 200, s.e.RenameGroupTo(r.Context(), body.Base, body.Paths))
+	writeJSON(w, 200, toRenameResultResp(s.e.RenameGroupTo(r.Context(), body.Base, body.Paths)))
 }
 
 // handleFileRename 单文件改名（v1.15）：POST /api/file/rename {path, name}。

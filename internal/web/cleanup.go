@@ -116,7 +116,7 @@ func (s *Server) handleCleanupRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, toCleanupRunResultResp(res))
 }
 
 // validateCleanupPlan 校验并规范化计划字段，返回中文错误（空串表示通过）。

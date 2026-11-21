@@ -163,3 +163,42 @@ func (s *Store) ProbeStats(ctx context.Context) (total int64, broken int64, err 
 	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(CASE WHEN status<>? THEN 1 ELSE 0 END),0) FROM probe_cache`, ProbeOK).Scan(&total, &broken)
 	return total, broken, err
 }
+
+// UpdateProbePathsBatch 批量把 probe_cache 的旧路径改成新路径（只换位置不改名）。
+//
+// 与 RenameFilePathsBatch 同口径：先删目标路径上的残留行再 UPDATE，否则 path 主键
+// 冲突会让整批回滚。探测结论（ffmpeg 健康检查）很贵，跟着文件走比重新探测划算；
+// 目标路径上的残留是旧行留下的幽灵缓存，删掉正是它该去的地方。
+func (s *Store) UpdateProbePathsBatch(ctx context.Context, pairs [][2]string) error {
+	if len(pairs) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	del, err := tx.PrepareContext(ctx, `DELETE FROM probe_cache WHERE path=?`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = del.Close() }()
+	up, err := tx.PrepareContext(ctx, `UPDATE probe_cache SET path=? WHERE path=?`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = up.Close() }()
+	for _, pr := range pairs {
+		if _, err := del.ExecContext(ctx, pr[1]); err != nil {
+			return err
+		}
+		if _, err := up.ExecContext(ctx, pr[1], pr[0]); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.dataVersion.Add(1)
+	return nil
+}

@@ -4,11 +4,13 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"verify/internal/config"
+	"verify/internal/store"
 	"verify/internal/webauth"
 )
 
@@ -100,7 +102,14 @@ func TestCSRFCookieSessionRequiresHeader(t *testing.T) {
 	if err := m.Replace(cfg); err != nil {
 		t.Fatalf("写入配置失败：%v", err)
 	}
-	s := &Server{cfg: m}
+	// recordDenied 第一次拒绝会写审计；st 不能为空，否则本用例单独跑会 panic
+	// （完整套件里靠前面用例占住节流窗口才没暴露）。
+	st, err := store.Open(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("打开测试库失败：%v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	s := &Server{cfg: m, st: st}
 	var hit bool
 	h := s.csrfGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hit = true
@@ -112,6 +121,7 @@ func TestCSRFCookieSessionRequiresHeader(t *testing.T) {
 		{http.MethodPost, "/api/report"},
 		{http.MethodPost, "/api/oplog/export"},
 		{http.MethodPost, "/api/import"},
+		{http.MethodPost, "/api/fs/roots"},
 		{http.MethodDelete, "/api/import/sessions?id=1"},
 		{http.MethodDelete, "/api/video_tags?id=1"},
 		{http.MethodDelete, "/api/sync/peers?machine=nas2"},

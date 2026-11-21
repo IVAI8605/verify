@@ -338,7 +338,14 @@ func (e *Engine) trimOne(ctx context.Context, j TrimJob) (*TrimDone, string) {
 			entry.Status, entry.ErrorMessage = "replace_failed", msg
 			return nil, msg
 		}
-		_ = e.st.MarkTrimmed(ctx, j.Path, j.Offset)
+		// 替换模式下原文件的索引行已被 trashFilesLocked → dropIndexPath 删掉，
+		// 新文件顶替原位后必须先 UpdatePath 重建行，否则 MarkTrimmed 更新的是
+		// 不存在的行（RowsAffected=0 且返回 nil），该视频会从结果页/分组/搜索里
+		// 一直消失到下次全量扫描，trimmed 标记也丢失。口径与 transcode 替换一致。
+		e.UpdatePath(j.Path)
+		if err := e.st.MarkTrimmed(ctx, j.Path, j.Offset); err != nil {
+			applog.Warn("剪除替换后标记已剪失败：%s（%v）", j.Path, err)
+		}
 		entry.QuarantinePath = qp
 		done.Replaced = true
 		done.Output = j.Path

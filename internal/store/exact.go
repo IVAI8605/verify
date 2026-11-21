@@ -398,6 +398,11 @@ func (s *Store) NameGroups(ctx context.Context, q GroupQuery) ([]Group, int64, e
 	// 且要与组头计数共用同一套筛选条件（v3.10.10，P2-1）。
 	loadWhere, loadArgs := q.rootCondition(`lower(name) IN (`+ph+`)`, args)
 	loadWhere, loadArgs = q.filterCondition(loadWhere, loadArgs)
+	// 与组头 WHERE 保持同一口径（上面的 `size>=?`）：少了它，「最小体积」筛选下
+	// 低于阈值的同名文件仍会出现在成员列表里，而 RecomputeStats 又按含它的集合
+	// 重算 Count/TotalSize/Waste，界面数字与用户设的筛选条件互相矛盾。
+	loadWhere += ` AND size>=?`
+	loadArgs = append(loadArgs, q.minGroupSize())
 	// v3.10.10（P1-2）：分组键必须由 SQL 的 lower(name) 产出，不能用 Go 的
 	// strings.ToLower 重建。SQLite lower() 只折叠 ASCII，Go 会做 Unicode 折叠
 	// 并把非法 UTF-8 换成替换字符；文件名含 Ä/全角Ａ/非法字节时两边键不一致，

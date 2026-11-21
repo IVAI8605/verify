@@ -104,7 +104,13 @@ func (s *Store) RewriteDirPrefix(ctx context.Context, oldDir, newDir string) (*D
 }
 
 // RewriteHealthDirPrefix 把 health_results 里位于 oldDir 下的行改到 newDir 下。
-// 与 files 不同，这里直接 UPDATE：健康行没有唯一约束挡路，前缀替换一次搞定。
+//
+// 先删目标前缀下的行再整体 UPDATE：health_results 有 UNIQUE(kind,path)，目标位置只要
+// 残留一行（旧路径留下的幽灵结论），整条 UPDATE 就会回滚并报 UNIQUE constraint failed
+// （2067），结果是健康行一条都搬不过去、全部留在旧路径上——目录已经搬走，健康页却还
+// 列着搬走前的文件，点进去必然失败。目录移动成功后 newDir 是刚 rename 过来的，其下
+// 不可能有活文件的结论，删掉的都是同一批文件的重复行；与 files 侧
+// renameFilePathsChunk「先 DELETE 目标路径再 UPDATE」同一口径。
 //
 // substr/length 都按字符数计数：目录名含中文时 Go 的 len() 是字节数，
 // 直接把数字算好传进去会算错起点，所以把前缀交给 SQLite 自己量。
@@ -113,6 +119,11 @@ func (s *Store) RewriteHealthDirPrefix(ctx context.Context, oldDir, newDir strin
 	sep := string(filepath.Separator)
 	oldPrefix := oldDir + sep
 	newPrefix := newDir + sep
+	if _, err := s.db.ExecContext(ctx,
+		`DELETE FROM health_results WHERE path = ? OR substr(path, 1, length(?)) = ?`,
+		newDir, newPrefix, newPrefix); err != nil {
+		return 0, err
+	}
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE health_results SET path = ? || substr(path, length(?) + 1)
 		 WHERE path = ? OR substr(path, 1, length(?)) = ?`,

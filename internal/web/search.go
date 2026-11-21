@@ -59,7 +59,10 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	qp := searchQuery(r)
 	if qp.Text == "" {
-		writeJSON(w, 200, searchItemsResponse{Total: 0, Items: []search.Item{}, Ready: s.searchIndex.Ready()})
+		// 空关键词也必须回同一个 struct：此前回的是只有 total/items/ready 的
+		// searchItemsResponse，于是「打开搜索页的默认请求」拿不到 files/next_cursor，
+		// 按 /api/search 取 files 的外部脚本会读到 undefined。
+		writeJSON(w, 200, searchSQLResponse{Total: 0, Items: []search.Item{}, Files: []search.Item{}, Ready: s.searchIndex.Ready()})
 		return
 	}
 	// 目录限定必须是受管扫描目录，避免拿搜索接口探测任意路径

@@ -38,7 +38,7 @@ func (s *Server) handleTrim(w http.ResponseWriter, r *http.Request) {
 			body.Jobs[i].Mode = "fast"
 		}
 	}
-	writeJSON(w, 200, s.e.TrimIntros(r.Context(), body.Jobs))
+	writeJSON(w, 200, toTrimResultResp(s.e.TrimIntros(r.Context(), body.Jobs)))
 }
 
 // handleTrimLog 剪除记录：GET /api/trim/log?limit=100。

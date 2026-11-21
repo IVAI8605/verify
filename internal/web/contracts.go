@@ -127,25 +127,3 @@ type groupsSimpleResponse struct {
 	Groups []store.Group `json:"groups"`
 	Total  int64         `json:"total"`
 }
-
-// ── 文件列表类 ──────────────────────────────────────────────────────────
-
-// filesResponse 是「文件列表」类接口的通用响应。
-//
-// 覆盖的接口：
-//
-//	GET /api/big        big.go       handleBigFiles
-//	GET /api/fs/list    fs.go        handleFsList
-//	GET /api/folders    folders.go   handleFolders
-type filesResponse struct {
-	Files []string `json:"files"`
-	Total int      `json:"total,omitempty"`
-	Limit int      `json:"limit,omitempty"`
-	Order string   `json:"order,omitempty"`
-	// ScannedDirs 是实际扫描到的目录数（fs/list 用）。
-	ScannedDirs int `json:"scanned_dirs,omitempty"`
-	// Path 是本次列举的根路径。
-	Path string `json:"path,omitempty"`
-	// Truncated 表示结果被截断（达到 limit 上限）。
-	Truncated bool `json:"truncated,omitempty"`
-}

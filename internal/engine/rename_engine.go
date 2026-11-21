@@ -35,6 +35,7 @@ import (
 
 	"verify/internal/applog"
 	"verify/internal/store"
+	"verify/internal/taskguard"
 )
 
 // RenamePair 是 ListReplace 的一条替换对。
@@ -533,6 +534,12 @@ func expandRenameTags(s string, idx int, meta *store.FileRow) string {
 func (e *Engine) ExecuteRenamePlan(ctx context.Context, plan []RenamePlanItem, methods []RenameMethod, presetID int64) (*RenameEngineResult, error) {
 	// v3.10.10（P0-1）：两个标签页同时执行各自的预览计划时，仅靠执行前的 Lstat 复核
 	// 仍会互相插入；这里把整个批次串行化，保证「检查目标 → rename」不被同进程的另一个批次打断。
+	// 与扫描/健康检测/索引体检互斥：这些任务会同时写 files 与 health_results。
+	rel, gerr := e.acquireTask(taskguard.KindRename, "执行改名方案", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		return nil, gerr
+	}
+	defer rel("done")
 	unlock := e.lockWrites()
 	defer unlock()
 	// v3.17.3（F-08）：改名同时写磁盘与 files/health 索引，与扫描、健康检测、
@@ -807,6 +814,11 @@ func (e *Engine) ExecuteRenamePlan(ctx context.Context, plan []RenamePlanItem, m
 // UndoRenameBatch 按批撤销：优先用批次任务号整批回退，旧批次按逐项任务号回退。
 // failures 汇总各任务的失败原因（v3.10.4），供前端明确提示「原文件名已被占用」等。
 func (e *Engine) UndoRenameBatch(ctx context.Context, batchID int64) (done, failed int, status string, failures []HealthOpItem, err error) {
+	rel, gerr := e.acquireTask(taskguard.KindRename, "撤销批量改名", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		return 0, 0, "", nil, gerr
+	}
+	defer rel("done")
 	unlock := e.lockWrites()
 	defer unlock()
 	// v3.10.10（第五轮 P1-3）：撤销已落盘，批次状态写入不能跟请求取消一起丢。

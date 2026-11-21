@@ -5,7 +5,6 @@
 package web
 
 import (
-	"verify/internal/search"
 	"verify/internal/store"
 )
 
@@ -171,11 +170,38 @@ type jobIDResponse struct {
 
 // ── 导入 ────────────────────────────────────────────────────────────────
 
-// ── 搜索 ────────────────────────────────────────────────────────────────
+// ── 目录浏览 ────────────────────────────────────────────────────────────
 
-// searchItemsResponse 是「搜索结果列表 + 是否就绪」。
-type searchItemsResponse struct {
-	Total int64         `json:"total"`
-	Items []search.Item `json:"items"`
-	Ready bool          `json:"ready"`
+// fsListEntryResponse 是 /api/fs/list 里的一个目录条目（对应 fsbrowse.Entry）。
+type fsListEntryResponse struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+	// Locked 表示该目录不可读（trimacl 未授权）——照样列出并显示锁标，
+	// 让用户看得到结构并可直接手输已授权路径。
+	Locked bool   `json:"locked,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// fsListResponse 是 GET /api/fs/list 的响应（对应 fsbrowse.Listing）。
+//
+// 字段与 fsbrowse.Listing 一一对应，包括 omitempty 的位置：
+// 目录选择器依赖 entries / roots / parent，锁标依赖 locked / reason，
+// 截断与「另有 N 个未授权卷根」依赖 truncated / hidden_locked。
+type fsListResponse struct {
+	Path    string                `json:"path"`
+	Parent  string                `json:"parent"`
+	Roots   []string              `json:"roots"`
+	Entries []fsListEntryResponse `json:"entries"`
+	// Locked 表示当前目录本身不可读，返回体仍然完整（含 roots）。
+	Locked bool   `json:"locked,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	// HiddenLocked 是入口视图里被收起的未授权卷根数量。
+	HiddenLocked int  `json:"hidden_locked,omitempty"`
+	Truncated    bool `json:"truncated,omitempty"`
+}
+
+// addBrowseRootReq 是 POST /api/fs/roots 的请求体。
+// 路径由服务端重新做三步防线校验，不信任前端「刚才探测通过」的结论。
+type addBrowseRootReq struct {
+	Path string `json:"path"`
 }

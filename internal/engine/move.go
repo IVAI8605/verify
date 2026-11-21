@@ -12,6 +12,7 @@ import (
 	"verify/internal/applog"
 	"verify/internal/health"
 	"verify/internal/store"
+	"verify/internal/taskguard"
 )
 
 // MoveResult 是一次批量移动的结果。
@@ -95,7 +96,7 @@ func (e *Engine) MovePreview(ctx context.Context, targetDir string, paths []stri
 
 // MoveFiles 批量移动文件到指定目录（设计文档 10.4，第一版仅同卷 os.Rename）：
 // 冲突追加 _1/_2 绝不覆盖（复用 UniquePath）；audit_log 按 task 可撤销（逆序 rename 回原位）；
-// 落库同步复用 UpdatePath（旧路径行删除 + 新路径按现存文件补录）。
+// 落库同步走 syncMovedIndex（只改 path/name/ext，不删行——删行会丢掉用户打标与媒体指纹）。
 func (e *Engine) MoveFiles(ctx context.Context, targetDir string, paths []string) *MoveResult {
 	unlock := e.lockWrites()
 	defer unlock()
@@ -103,6 +104,16 @@ func (e *Engine) MoveFiles(ctx context.Context, targetDir string, paths []string
 	wctx, cancel := detachCtx(ctx)
 	defer cancel()
 	res := &MoveResult{Errors: map[string]string{}}
+	pairs := make([][2]string, 0, len(paths))
+	rel, gerr := e.acquireTask(taskguard.KindRename, "批量移动", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		for _, p := range paths {
+			res.Failed = append(res.Failed, p)
+			res.Errors[p] = gerr.Error()
+		}
+		return res
+	}
+	defer rel("done")
 	if msg := e.moveTargetDir(targetDir); msg != "" {
 		for _, p := range paths {
 			res.Failed = append(res.Failed, p)
@@ -142,11 +153,13 @@ func (e *Engine) MoveFiles(ctx context.Context, targetDir string, paths []string
 		}); err != nil {
 			applog.Warn("移动已完成，但操作记录写入失败：%s → %s（%v）", src, dst, err)
 		}
-		// 索引同步：旧路径删除，新路径由 UpdatePath 按现存文件补录并触发目录重扫
-		e.dropIndexPath(wctx, nil, src)
-		e.UpdatePath(dst)
+		// 索引同步：只改路径不删行（见 syncMovedIndex）。
+		pairs = append(pairs, [2]string{src, dst})
 		e.UpdatePath(filepath.Dir(src))
 		res.Done = append(res.Done, MoveDone{From: src, To: dst})
+	}
+	if len(pairs) > 0 {
+		e.syncMovedIndex(wctx, pairs)
 	}
 	if len(res.Done) > 0 {
 		res.TaskID = taskID
@@ -160,6 +173,11 @@ func (e *Engine) MoveFiles(ctx context.Context, targetDir string, paths []string
 // UndoMove 撤销一次移动任务：按审计逆序 rename 回原位（设计文档 10.4.4）。
 // 目标位置已存在同名文件时不覆盖，记失败。
 func (e *Engine) UndoMove(ctx context.Context, taskID int64) (done, failed int, err error) {
+	rel, gerr := e.acquireTask(taskguard.KindRename, "撤销移动", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		return 0, 0, gerr
+	}
+	defer rel("done")
 	unlock := e.lockWrites()
 	defer unlock()
 	wctx, cancel := detachCtx(ctx)
@@ -169,6 +187,7 @@ func (e *Engine) UndoMove(ctx context.Context, taskID int64) (done, failed int, 
 		return 0, 0, err
 	}
 	// 逆序回放
+	pairs := make([][2]string, 0, len(entries))
 	for i := len(entries) - 1; i >= 0; i-- {
 		a := entries[i]
 		if a.Operation != "move" {
@@ -192,13 +211,55 @@ func (e *Engine) UndoMove(ctx context.Context, taskID int64) (done, failed int, 
 			failed++
 			continue
 		}
-		e.dropIndexPath(wctx, nil, a.NewPath)
-		e.UpdatePath(dst)
+		pairs = append(pairs, [2]string{a.NewPath, dst})
 		done++
+	}
+	if len(pairs) > 0 {
+		e.syncMovedIndex(wctx, pairs)
 	}
 	if done > 0 {
 		e.bumpVersion()
 		e.Bus.Publish(Event{Type: "update"})
 	}
 	return done, failed, nil
+}
+
+// syncMovedIndex 移动/撤销移动后同步索引：只改 files 的 path/name/ext，不删行。
+//
+// 为什么不用 dropIndexPath + UpdatePath：DeleteByPath 在同一个事务里连 health_results、
+// file_tags、probe_cache 一起删，再 UpdatePath 会按新路径建一条新 id 的行——挂在
+// files.id 上的用户打标与音视频指纹随之丢失，文件会被当成新文件重新排队分析。
+// store.RenameFilePathsBatch 正是为「名字不变、位置变」写的，此前全仓零调用。
+//
+// 旧路径的健康结论按路径存放（不随 files 行消失），必须一并清掉，否则健康页会
+// 继续列出已经不存在的文件。
+func (e *Engine) syncMovedIndex(ctx context.Context, pairs [][2]string) {
+	if len(pairs) == 0 {
+		return
+	}
+	moved := make(map[string]string, len(pairs))
+	olds := make([]string, 0, len(pairs))
+	for _, pr := range pairs {
+		moved[pr[0]] = pr[1]
+		olds = append(olds, pr[0])
+	}
+	missing, err := e.st.RenameFilePathsBatch(ctx, pairs)
+	if err != nil {
+		// 磁盘已经移动完成，索引写失败不能回滚文件；下次全量扫描会纠正。
+		applog.Warn("移动后批量更新索引失败（%d 条）：%v", len(pairs), err)
+		return
+	}
+	// 旧路径不在索引里（零字节或尚未扫描）：沿用旧行为按新路径补录，避免文件从列表里消失。
+	for _, old := range missing {
+		if dst, ok := moved[old]; ok {
+			e.UpdatePath(dst)
+		}
+	}
+	if herr := e.st.DropHealthByPaths(ctx, olds); herr != nil {
+		applog.Warn("移动后清理旧路径健康结论失败（%d 条）：%v", len(olds), herr)
+	}
+	// 探测缓存按 path 存主键，也要跟着走：结论是 ffmpeg 跑出来的，重探测很贵。
+	if perr := e.st.UpdateProbePathsBatch(ctx, pairs); perr != nil {
+		applog.Warn("移动后改写探测缓存路径失败（%d 条）：%v", len(pairs), perr)
+	}
 }

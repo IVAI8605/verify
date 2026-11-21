@@ -59,7 +59,7 @@ func (s *Server) handleFolderRenamePreview(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, preview)
+	writeJSON(w, 200, toFolderRenamePreviewResp(preview))
 }
 
 // handleFolderRename 执行：POST /api/folder_rename。
@@ -82,7 +82,7 @@ func (s *Server) handleFolderRename(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, preview)
+	writeJSON(w, 200, toFolderRenamePreviewResp(preview))
 }
 
 // handleFolderRenameUndo 撤销：POST /api/folder_rename/undo {task_id}。

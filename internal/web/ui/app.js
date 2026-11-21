@@ -664,7 +664,14 @@ document.addEventListener('click', async (ev) => {
     // 探测失败会带服务端给出的明确原因，而不是默默跳到半截。
     const bad = fsPathError(raw);
     if (bad) { toast(bad, 'err'); return; }
-    await loadDir(normPath(raw));
+    const p = normPath(raw);
+    await loadDir(p);
+    // GET /api/fs/list 现在只读；记住授权目录改由这里显式 POST（带 CSRF 头）。
+    // 只有服务端探测通过（返回的 path 与输入一致）才发，失败不打扰用户浏览。
+    if (S.dir && S.dir.path === p) {
+      try { await postJSON('/api/fs/roots', { path: p }); }
+      catch (e) { toast('目录可浏览，但记住失败：' + e.message, 'warn'); }
+    }
     return;
   }
   if (act === 'dir-enter') { loadDir(el.dataset.path); return; }

@@ -2202,7 +2202,7 @@ func (e *Engine) videoWorker() {
 				fp, ferr := e.RunnerSnapshot().Fingerprint(ctx, f.Path, cfg.IgnoreIntroSeconds, cfg.IgnoreOutroSeconds, cfg.VideoDensity)
 				cancel()
 				if ferr != nil {
-					applied, err := e.st.SetVideoError(e.baseCtx, id, f.Size, f.Mtime, ferr.Error())
+					applied, err := e.st.SetVideoError(e.baseCtx, id, f.Size, f.Mtime, f.Ctime, ferr.Error())
 					if err != nil {
 						applog.Warn("写入视频失败结果失败（%s）：%v", f.Path, err)
 					} else if !applied {

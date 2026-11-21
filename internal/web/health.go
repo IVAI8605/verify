@@ -118,7 +118,7 @@ func (s *Server) handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			uncertain[string(health.KindBroken)] += n
 		}
 	}
-	writeJSON(w, 200, healthStatusResponse{Progress: s.e.HealthState(), Counts: counts, Uncertain: uncertain, FFmpeg: s.e.RunnerAvailable(), LastAudit: lastAudit, Auto: s.e.AutoProbeState(), ProbeCache: map[string]any{"total": probedTotal, "broken": probedBroken}})
+	writeJSON(w, 200, healthStatusResponse{Progress: s.e.HealthState(), Counts: counts, Uncertain: uncertain, FFmpeg: s.e.RunnerAvailable(), LastAudit: lastAudit, Auto: s.e.AutoProbeState(), ProbeCache: probeCacheResponse{Total: probedTotal, Broken: probedBroken}})
 }
 
 // handleHealthResults 按类别分页返回结果。
@@ -185,7 +185,7 @@ func (s *Server) handleHealthRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opt := health.NameOptions{RestrictCharset: body.RestrictCharset, NonCJKNonASCII: body.NonCJK}
-	writeJSON(w, 200, s.e.RenameHealthFiles(r.Context(), kind, body.Paths, opt, body.OnlyUppercase))
+	writeJSON(w, 200, toHealthOpResultResp(s.e.RenameHealthFiles(r.Context(), kind, body.Paths, opt, body.OnlyUppercase)))
 }
 
 // handleHealthFixEncoding 修复库里所有非 UTF-8 文件名（v3.12.0）。
@@ -214,7 +214,7 @@ func (s *Server) handleHealthFixEncoding(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	opt := health.NameOptions{RestrictCharset: body.RestrictCharset, NonCJKNonASCII: body.NonCJK}
-	writeJSON(w, 200, s.e.FixInvalidEncodingNames(r.Context(), opt))
+	writeJSON(w, 200, toHealthOpResultResp(s.e.FixInvalidEncodingNames(r.Context(), opt)))
 }
 
 // handleHealthTrash 把选中文件移入隔离区。
@@ -240,7 +240,7 @@ func (s *Server) handleHealthTrash(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未选择文件"})
 		return
 	}
-	writeJSON(w, 200, s.e.TrashHealthFiles(r.Context(), body.Paths))
+	writeJSON(w, 200, toHealthOpResultResp(s.e.TrashHealthFiles(r.Context(), body.Paths)))
 }
 
 // handleHealthUndo 按任务号撤销批量重命名。
@@ -269,5 +269,5 @@ func (s *Server) handleHealthUndo(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, toHealthOpResultResp(res))
 }

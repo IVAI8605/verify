@@ -106,6 +106,11 @@ interface ActionItemsResp {
   items: any;
 }
 
+/** 后端 addBrowseRootReq（1 个字段）。 */
+interface AddBrowseRootReq {
+  path: string;
+}
+
 /** 后端 authErrorResponse（2 个字段）。 */
 interface AuthErrorResp {
   error: string;
@@ -139,6 +144,16 @@ interface CleanupPlansResp {
   plans: any;
 }
 
+/** 后端 cleanupRunResultResp（6 个字段）。 */
+interface CleanupRunResultResp {
+  plan_id: number;
+  groups: number;
+  trashed: number;
+  freed: number;
+  skipped: number;
+  errors?: string[];
+}
+
 /** 后端 countErrorResponse（2 个字段）。 */
 interface CountErrorResp {
   error: string;
@@ -158,6 +173,33 @@ interface CountResp {
   count?: number;
 }
 
+/** 后端 diagAuthzResp（7 个字段）。 */
+interface DiagAuthzResp {
+  fs_uids: string[];
+  share_names: string[];
+  probes: DiagProbeResp[];
+  authorized: string[];
+  discovered: string[];
+  fs_view: DiagViewProbeResp[];
+  discover_dir: string;
+}
+
+/** 后端 diagProbeResp（4 个字段）。 */
+interface DiagProbeResp {
+  path: string;
+  ok: boolean;
+  error?: string;
+  fs?: string;
+}
+
+/** 后端 diagViewProbeResp（4 个字段）。 */
+interface DiagViewProbeResp {
+  view: string;
+  ok: boolean;
+  count: number;
+  error?: string;
+}
+
 /** 后端 doneFailedItemsResponse（3 个字段）。 */
 interface DoneFailedItemsResp {
   done: number;
@@ -171,6 +213,15 @@ interface DoneFailedResp {
   failed: number;
 }
 
+/** 后端 emptyDirResultResp（5 个字段）。 */
+interface EmptyDirResultResp {
+  removed: string[];
+  failed: string[];
+  errors: any;
+  conflict?: string;
+  reconcile?: any;
+}
+
 /** 后端 errorResponse（1 个字段）。 */
 interface ErrorResp {
   error: string;
@@ -182,6 +233,16 @@ interface FailedReasonsResp {
   reasons: any;
 }
 
+/** 后端 fanjianResultResp（6 个字段）。 */
+interface FanjianResultResp {
+  task_id?: number;
+  done: RenameDoneResp[];
+  skipped: string[];
+  failed: string[];
+  errors: any;
+  reconcile?: any;
+}
+
 /** 后端 filesLimitOrderResponse（3 个字段）。 */
 interface FilesLimitOrderResp {
   files: StoreFileRow[];
@@ -189,15 +250,22 @@ interface FilesLimitOrderResp {
   order: string;
 }
 
-/** 后端 filesResponse（7 个字段）。 */
-interface FilesResp {
-  files: string[];
-  total?: number;
-  limit?: number;
-  order?: string;
-  scanned_dirs?: number;
-  path?: string;
-  truncated?: boolean;
+/** 后端 folderRenameItemResp（6 个字段）。 */
+interface FolderRenameItemResp {
+  path: string;
+  old: string;
+  new: string;
+  class: string;
+  skip: boolean;
+  error?: string;
+}
+
+/** 后端 folderRenamePreviewResp（4 个字段）。 */
+interface FolderRenamePreviewResp {
+  dir: string;
+  task_id?: number;
+  items: FolderRenameItemResp[];
+  rename_count: number;
 }
 
 /** 后端 folderStatsResponse（3 个字段）。 */
@@ -205,6 +273,26 @@ interface FolderStatsResp {
   path: string;
   files: any;
   bytes: number;
+}
+
+/** 后端 fsListEntryResponse（4 个字段）。 */
+interface FsListEntryResp {
+  name: string;
+  path: string;
+  locked?: boolean;
+  reason?: string;
+}
+
+/** 后端 fsListResponse（8 个字段）。 */
+interface FsListResp {
+  path: string;
+  parent: string;
+  roots: string[];
+  entries: FsListEntryResp[];
+  locked?: boolean;
+  reason?: string;
+  hidden_locked?: number;
+  truncated?: boolean;
 }
 
 /** 后端 groupsDisabledResponse（3 个字段）。 */
@@ -242,6 +330,22 @@ interface HealthItemsResp {
   items: any;
 }
 
+/** 后端 healthOpItemResp（3 个字段）。 */
+interface HealthOpItemResp {
+  path: string;
+  new_path?: string;
+  error?: string;
+}
+
+/** 后端 healthOpResultResp（5 个字段）。 */
+interface HealthOpResultResp {
+  task_id: number;
+  done: number;
+  failed: number;
+  items: HealthOpItemResp[];
+  reconcile?: any;
+}
+
 /** 后端 healthResultsResponse（3 个字段）。 */
 interface HealthResultsResp {
   kind: string;
@@ -257,7 +361,7 @@ interface HealthStatusResp {
   ffmpeg: any;
   last_audit: any;
   auto: any;
-  probe_cache: any;
+  probe_cache: ProbeCacheResp;
 }
 
 /** 后端 importGroupsResponse（3 个字段）。 */
@@ -285,6 +389,16 @@ interface ImportSessionResp {
 /** 后端 importSessionsResponse（1 个字段）。 */
 interface ImportSessionsResp {
   sessions: any[];
+}
+
+/** 后端 indexRepairResultResp（6 个字段）。 */
+interface IndexRepairResultResp {
+  checked: number;
+  removed: number;
+  would_remove: number;
+  skipped: number;
+  skipped_volumes?: VolumeSkipResp[];
+  dry_run: boolean;
 }
 
 /** 后端 introGroupsResponse（7 个字段）。 */
@@ -330,10 +444,47 @@ interface MatchModeDisabledResp {
   reason?: string;
 }
 
+/** 后端 metricsResp（8 个字段）。 */
+interface MetricsResp {
+  pid: number;
+  uptime_seconds: number;
+  cpu_seconds_total: number;
+  rss_bytes: number;
+  io_read_bytes: number;
+  io_write_bytes: number;
+  goroutines: number;
+  version: string;
+}
+
 /** 后端 modeResponse（2 个字段）。 */
 interface ModeResp {
   ok: boolean;
   mode: string;
+}
+
+/** 后端 moveDirResultResp（7 个字段）。 */
+interface MoveDirResultResp {
+  task_id?: number;
+  from: string;
+  to: string;
+  files: number;
+  health: number;
+  missing: number;
+  error?: string;
+}
+
+/** 后端 moveDoneResp（2 个字段）。 */
+interface MoveDoneResp {
+  from: string;
+  to: string;
+}
+
+/** 后端 moveFilesResultResp（4 个字段）。 */
+interface MoveFilesResultResp {
+  task_id?: number;
+  done: MoveDoneResp[];
+  failed: string[];
+  errors: any;
 }
 
 /** 后端 moveResultResponse（2 个字段）。 */
@@ -394,10 +545,60 @@ interface PausedResp {
   paused: boolean;
 }
 
+/** 后端 probeCacheResponse（2 个字段）。 */
+interface ProbeCacheResp {
+  total: number;
+  broken: number;
+}
+
+/** 后端 reconcileItemResp（5 个字段）。 */
+interface ReconcileItemResp {
+  path: string;
+  expected: string;
+  actual: string;
+  problem: string;
+  state: string;
+}
+
+/** 后端 reconcileReportResp（6 个字段）。 */
+interface ReconcileReportResp {
+  snapshot_id: number;
+  checked: number;
+  mismatched: number;
+  truncated?: boolean;
+  items?: ReconcileItemResp[];
+  advice?: string;
+}
+
+/** 后端 relinkItemResp（3 个字段）。 */
+interface RelinkItemResp {
+  path: string;
+  ok: boolean;
+  reason?: string;
+}
+
+/** 后端 relinkResultResp（4 个字段）。 */
+interface RelinkResultResp {
+  keep: string;
+  items: RelinkItemResp[];
+  ok_count: number;
+  bytes: number;
+}
+
 /** 后端 removedErrorsResponse（2 个字段）。 */
 interface RemovedErrorsResp {
   removed: number;
   errors: any;
+}
+
+/** 后端 renameBatchItemResp（6 个字段）。 */
+interface RenameBatchItemResp {
+  path: string;
+  orig: string;
+  target: string;
+  new_path?: string;
+  task_id?: number;
+  error?: string;
 }
 
 /** 后端 renameBatchesResidualResponse（2 个字段）。 */
@@ -471,6 +672,22 @@ interface RenameChunkWarningResult {
   reconcile: any;
 }
 
+/** 后端 renameDoneResp（2 个字段）。 */
+interface RenameDoneResp {
+  from: string;
+  to: string;
+}
+
+/** 后端 renameEngineResultResp（6 个字段）。 */
+interface RenameEngineResultResp {
+  batch_id: number;
+  task_id: number;
+  done: number;
+  failed: number;
+  items: RenameBatchItemResp[];
+  reconcile?: any;
+}
+
 /** 后端 renameExecResult（5 个字段）。 */
 interface RenameExecResult {
   batch_id: number;
@@ -532,14 +749,58 @@ interface RenamePresetsResp {
   presets: any;
 }
 
+/** 后端 renameResultResp（5 个字段）。 */
+interface RenameResultResp {
+  task_id?: number;
+  done: RenameDoneResp[];
+  failed: string[];
+  errors: any;
+  reconcile?: any;
+}
+
+/** 后端 restoreResultResp（5 个字段）。 */
+interface RestoreResultResp {
+  restored: string[];
+  failed: string[];
+  errors: string[];
+  unprocessed?: number;
+  conflict?: string;
+}
+
 /** 后端 retainClearedResponse（1 个字段）。 */
 interface RetainClearedResp {
   cleared: number;
 }
 
+/** 后端 retainPrefixStatResp（3 个字段）。 */
+interface RetainPrefixStatResp {
+  prefix: string;
+  adopt: number;
+  changed: number;
+}
+
+/** 后端 retainProfileResp（6 个字段）。 */
+interface RetainProfileResp {
+  learned: number;
+  adopt: number;
+  changed: number;
+  enabled: boolean;
+  weights: RetainWeightsResp;
+  top_prefixes: RetainPrefixStatResp[];
+}
+
 /** 后端 retainSuggestionsResponse（1 个字段）。 */
 interface RetainSuggestionsResp {
   suggestions: any;
+}
+
+/** 后端 retainWeightsResp（5 个字段）。 */
+interface RetainWeightsResp {
+  quality: number;
+  integrity: number;
+  path_tidy: number;
+  name_q: number;
+  fresh: number;
 }
 
 /** 后端 ruleSearchStatusResponse（8 个字段）。 */
@@ -563,13 +824,6 @@ interface RunsResp {
 interface SearchFacetsResp {
   state: string;
   totals: any;
-}
-
-/** 后端 searchItemsResponse（3 个字段）。 */
-interface SearchItemsResp {
-  total: number;
-  items: any[];
-  ready: boolean;
 }
 
 /** 后端 searchNotReadyResponse（3 个字段）。 */
@@ -769,6 +1023,24 @@ interface TrashRemovedResp {
   errors: any;
 }
 
+/** 后端 trashResultResp（6 个字段）。 */
+interface TrashResultResp {
+  moved: string[];
+  failed: string[];
+  errors: string[];
+  unprocessed?: number;
+  conflict?: string;
+  reconcile?: any;
+}
+
+/** 后端 trimDoneResp（4 个字段）。 */
+interface TrimDoneResp {
+  path: string;
+  output: string;
+  replaced: boolean;
+  output_duration: number;
+}
+
 /** 后端 trimLogResponse（1 个字段）。 */
 interface TrimLogResp {
   log: TrimLogEntry[];
@@ -779,6 +1051,26 @@ interface TrimProbeResp {
   boundary: number;
   status: string;
   cached: boolean;
+}
+
+/** 后端 trimResultResp（3 个字段）。 */
+interface TrimResultResp {
+  done: TrimDoneResp[];
+  failed: string[];
+  errors: any;
+}
+
+/** 后端 unauthStateResponse（2 个字段）。 */
+interface UnauthStateResp {
+  running: boolean;
+  phase: string;
+}
+
+/** 后端 userPrefStatsResp（3 个字段）。 */
+interface UserPrefStatsResp {
+  total: number;
+  adopt: number;
+  changed: number;
 }
 
 /** 后端 videoTagSavedResponse（4 个字段）。 */
@@ -792,6 +1084,13 @@ interface VideoTagSavedResp {
 /** 后端 videoTagsResponse（1 个字段）。 */
 interface VideoTagsResp {
   tags: StoreVideoTag[];
+}
+
+/** 后端 volumeSkipResp（3 个字段）。 */
+interface VolumeSkipResp {
+  volume: string;
+  rows: number;
+  reason: string;
 }
 
 /** 后端 watchRestartResponse（5 个字段）。 */

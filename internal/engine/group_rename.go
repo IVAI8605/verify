@@ -165,6 +165,11 @@ func (e *Engine) groupRenameCheck(t, basePath, baseDir string) string {
 // RenameOne 单文件改名（设计文档 15.4.5）：newName 只含文件名（可含扩展名）。
 // 服务端校验非法字符；与现存文件冲突追加序号；audit operation='rename'。
 func (e *Engine) RenameOne(ctx context.Context, path, newName string) (string, string, error) {
+	rel, gerr := e.acquireTask(taskguard.KindRename, "单文件改名", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		return "", "", gerr
+	}
+	defer rel("done")
 	path = filepath.Clean(path)
 	newName = strings.TrimSpace(newName)
 	if newName == "" {

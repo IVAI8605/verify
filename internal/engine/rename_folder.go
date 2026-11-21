@@ -15,6 +15,7 @@ import (
 	"verify/internal/applog"
 	"verify/internal/fname"
 	"verify/internal/store"
+	"verify/internal/taskguard"
 )
 
 // F5 按文件夹名重命名（v1.36 引入，v1.37 落地）：
@@ -185,6 +186,11 @@ func (e *Engine) FolderRenamePreviewAPI(dir string, opt FolderRenameOptions) (*F
 // FolderRename 执行按文件夹名重命名：逐项校验（ValidPath/保护/存在）、
 // 冲突追加、audit 可撤销、UpdatePath 同步索引。
 func (e *Engine) FolderRename(ctx context.Context, dir string, opt FolderRenameOptions) (*FolderRenamePreview, error) {
+	rel, gerr := e.acquireTask(taskguard.KindRename, "文件夹批量改名", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		return nil, gerr
+	}
+	defer rel("done")
 	if !e.ValidDirPath(dir) {
 		return nil, errInvalidDir()
 	}
@@ -259,6 +265,11 @@ func (e *appErr) Error() string { return e.msg }
 
 // UndoFolderRename 撤销按文件夹名重命名任务（audit 逆序回放）。
 func (e *Engine) UndoFolderRename(ctx context.Context, taskID int64) (done, failed int, err error) {
+	rel, gerr := e.acquireTask(taskguard.KindRename, "撤销文件夹改名", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		return 0, 0, gerr
+	}
+	defer rel("done")
 	unlock := e.lockWrites()
 	defer unlock()
 	wctx, cancel := detachCtx(ctx)

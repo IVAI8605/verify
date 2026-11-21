@@ -1577,11 +1577,13 @@ func (s *Store) HasVideoState(ctx context.Context, id int64) (bool, error) {
 	return done == 1, nil
 }
 
-// SetVideoError 记录视频分析失败，同样带 size/mtime 乐观条件：
-// 新文件不应被旧内容的错误压住重试窗口（v3.10.8）。
-func (s *Store) SetVideoError(ctx context.Context, id, size, mtime int64, errMsg string) (bool, error) {
+// SetVideoError 记录视频分析失败，同样带 size/mtime/ctime 乐观条件：
+// 新文件不应被旧内容的错误压住重试窗口（v3.10.8）。ctime 与 SetVideo/SetIntro 对齐
+// （v3.10.10 P2-5）：rsync -t、备份还原这类「size 与 mtime 都不变、只换内容」的覆盖
+// 会让错误结论落到新内容上，新文件被误标分析失败且 7 天内不重试。
+func (s *Store) SetVideoError(ctx context.Context, id, size, mtime, ctime int64, errMsg string) (bool, error) {
 	res, err := s.db.ExecContext(ctx, `UPDATE files SET audio=NULL, thumb='', duration=NULL, video_error=?, video_at=?, video_tries=video_tries+1
-		WHERE id=? AND size=? AND mtime=?`, errMsg, time.Now().Unix(), id, size, mtime)
+		WHERE id=? AND size=? AND mtime=? AND (ctime=0 OR ?=0 OR ctime=?)`, errMsg, time.Now().Unix(), id, size, mtime, ctime, ctime)
 	if err != nil {
 		return false, err
 	}

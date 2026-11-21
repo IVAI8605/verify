@@ -185,6 +185,11 @@ func (e *Engine) MoveDir(ctx context.Context, srcDir, dstDir string) *MoveDirRes
 // UndoMoveDir 撤销一次目录移动：把目录 rename 回原位，索引前缀再改回去。
 // 与 UndoMove 一样按审计逆序回放；目录级任务在审计里只有一行（原目录 → 新目录）。
 func (e *Engine) UndoMoveDir(ctx context.Context, taskID int64) (done, failed int, err error) {
+	rel, gerr := e.acquireTask(taskguard.KindRename, "撤销目录移动", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		return 0, 0, gerr
+	}
+	defer rel("done")
 	unlock := e.lockWrites()
 	defer unlock()
 	wctx, cancel := detachCtx(ctx)

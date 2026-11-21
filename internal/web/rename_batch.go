@@ -194,7 +194,7 @@ func (s *Server) handleRenameExecute(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, errorResponse{Error: err.Error()})
 			return
 		}
-		writeJSON(w, 200, res)
+		writeJSON(w, 200, toRenameEngineResultResp(res))
 		return
 	}
 	items := make([]store.RenameBatchItem, 0, len(req.Files))

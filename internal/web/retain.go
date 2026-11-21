@@ -100,7 +100,7 @@ func (s *Server) handleRetainPrefStats(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, st)
+	writeJSON(w, 200, toUserPrefStatsResp(st))
 }
 
 // handleRetainPrefClear 重置学习数据：POST /api/retain/pref/clear。
@@ -125,7 +125,7 @@ func (s *Server) handleRetainPrefProfile(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
-	writeJSON(w, 200, s.e.RetainProfileNow(r.Context()))
+	writeJSON(w, 200, toRetainProfileResp(s.e.RetainProfileNow(r.Context())))
 }
 
 // handleRetainPrefApply 启用/停用偏好反哺：POST /api/retain/pref/apply {"enable":true}。
@@ -146,5 +146,5 @@ func (s *Server) handleRetainPrefApply(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, profile)
+	writeJSON(w, 200, toRetainProfileResp(profile))
 }

@@ -12,6 +12,7 @@ import (
 	"verify/internal/applog"
 	"verify/internal/hashx"
 	"verify/internal/store"
+	"verify/internal/taskguard"
 )
 
 // relinkTmpSuffix 是硬链接替换用的临时文件后缀（同目录保证同文件系统）。
@@ -130,6 +131,14 @@ func (e *Engine) RelinkFiles(ctx context.Context, keepPath string, targets []str
 	wctx, cancel := detachCtx(ctx)
 	defer cancel()
 	res := &RelinkResult{Keep: keepPath}
+	rel, gerr := e.acquireTask(taskguard.KindRename, "硬链接合并", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		for _, t := range targets {
+			res.Items = append(res.Items, RelinkItem{Path: t, Reason: gerr.Error()})
+		}
+		return res
+	}
+	defer rel("done")
 	taskID, err := e.st.NewAuditTaskID(wctx)
 	if err != nil {
 		applog.Warn("获取审计任务号失败：%v", err)
@@ -144,7 +153,19 @@ func (e *Engine) RelinkFiles(ctx context.Context, keepPath string, targets []str
 			continue
 		}
 		tmp := t + relinkTmpSuffix
-		_ = os.Remove(tmp) // 残留清理（上次中断可能遗留）
+		// 只清理「上一轮中断留下的、指向保留者的硬链接」，绝不无条件删除：
+		// 用户目录里恰好存在 <目标名>.duplink.tmp（备份工具、下载器残留、手工改名）
+		// 时，旧代码会把它静默删掉——不进隔离区、不写审计，与「永不永久删除」冲突。
+		// 不是我们留下的就保留，随后的 os.Link 会因 EEXIST 失败并按普通失败上报，
+		// 目标文件不会被触碰（trim / transcode 已改用唯一临时名，relink 这里保持定名
+		// 以便下次启动能认出并回收自己的残留）。
+		if fi, serr := os.Lstat(tmp); serr == nil {
+			if keep, kerr := os.Stat(keepPath); kerr == nil && os.SameFile(fi, keep) {
+				_ = os.Remove(tmp)
+			} else {
+				applog.Warn("硬链接临时名被非本程序文件占用，跳过该目标：%s", tmp)
+			}
+		}
 		if err := os.Link(keepPath, tmp); err != nil {
 			item.Reason = friendlyLinkError(err)
 			res.Items = append(res.Items, item)

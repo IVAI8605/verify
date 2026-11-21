@@ -44,7 +44,7 @@ import (
 //go:embed ui
 var uiFS embed.FS
 
-const Version = "4.1.2"
+const Version = "4.1.3"
 
 type Server struct {
 	e       *engine.Engine
@@ -244,6 +244,7 @@ func (s *Server) Handler() http.Handler {
 	// v3.11.0：历史写操作快照（只读，不触发文件操作）。
 	mux.HandleFunc("/api/op-snapshots", s.auth(s.handleOpSnapshots))
 	mux.HandleFunc("/api/fs/list", s.auth(s.handleFSList))
+	mux.HandleFunc("/api/fs/roots", s.auth(s.handleFSAddRoot))
 	mux.HandleFunc("/api/diag/authz", s.auth(s.handleDiagAuthz))
 	mux.HandleFunc("/api/fs/mkdir", s.auth(s.handleFSMkdir))
 	mux.HandleFunc("/api/metric", s.auth(s.handleMetric))
@@ -715,7 +716,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			Auth:    map[string]any{"required": cfg.AccessToken != "", "ok": false},
 		}
 		if s.e != nil {
-			out.State = s.e.State()
+			// 只给「是否在跑、跑到哪个阶段」两个非敏感字段：State 里还有
+			// Current（正在扫描的文件绝对路径）、Message、LastError，
+			// 未授权访客不该靠 GET /api/status 持续读到卷内真实目录与文件名。
+			st := s.e.State()
+			out.State = unauthStateResponse{Running: st.Running, Phase: st.Phase}
 		}
 		writeJSON(w, 200, out)
 		return
@@ -1446,7 +1451,7 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 	// v3.10.10（第五轮 P1-4）：已移走的条目立刻从结果快照剔除，
 	// 否则结果页仍显示它们，下一次勾选还会用陈旧成员过 keep-one。
 	s.snap.removePaths(res.Moved)
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, toTrashResultResp(res))
 }
 
 // handleTrashList 是隔离区的纯只读清单入口（v3.26.0 F1）。
@@ -1582,7 +1587,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, errorResponse{Error: res.Conflict})
 		return
 	}
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, toRestoreResultResp(res))
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -1613,7 +1618,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, errorResponse{Error: res.Conflict})
 		return
 	}
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, toTrashResultResp(res))
 }
 
 // v3.10.6 安全修复：清空隔离区是永久删除，只接受 POST 且要求显式 confirm。
@@ -2081,25 +2086,65 @@ func (s *Server) handleFSList(w http.ResponseWriter, r *http.Request) {
 	roots := s.browseRoots()
 	// v3.5.3：飞牛授权了子目录（如 /vol3/1000/<共享目录>/<子目录>）时，共享根不可读、
 	// 无法从 /fs 枚举子目录，自动发现看不到。允许用户手动输入已授权路径：
-	// 服务端先做 /vol* + trimacl + 挂载类型探测，通过后临时并入本次白名单并记住，
-	// 之后自动出现在两处目录选择器的根列表；未通过则明确拒绝，不放宽任何路径校验。
+	// 服务端先做 /vol* + trimacl + 挂载类型探测，通过后**只在本次请求里**并入白名单。
+	//
+	// v4.1.3（SEC）：这里以前还会 AddBrowseRoot 落盘，等于 GET 写配置。CSRF 中间件
+	// 按方法放行 GET，攻击者只要让已登录用户点一个链接就能往配置白名单里追加条目。
+	// 记住动作已拆到 POST /api/fs/roots：由前端在用户手动输入路径探测成功后显式调用，
+	// 走 CSRF 校验与审计。GET 现在严格只读。
 	if path != "" && !pathUnderRoots(filepath.Clean(path), roots) {
 		if !fsbrowse.AuthorizedPath(path) {
 			writeJSON(w, http.StatusForbidden, errorResponse{Error: "该路径未在飞牛系统设置中授权，或不是本地存储目录"})
 			return
 		}
-		clean := filepath.Clean(path)
-		roots = append(roots, clean)
-		if err := s.cfg.AddBrowseRoot(clean); err != nil {
-			applog.Warn("记住授权目录失败：%s", err.Error())
-		}
+		roots = append(roots, filepath.Clean(path))
 	}
 	list, err := fsbrowse.List(roots, s.authzRoots(), path)
 	if err != nil {
 		writeJSON(w, 400, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, 200, list)
+	out := fsListResponse{
+		Path: list.Path, Parent: list.Parent, Roots: list.Roots,
+		Entries:      make([]fsListEntryResponse, 0, len(list.Entries)),
+		Locked:       list.Locked,
+		Reason:       list.Reason,
+		HiddenLocked: list.HiddenLocked,
+		Truncated:    list.Truncated,
+	}
+	for _, en := range list.Entries {
+		out.Entries = append(out.Entries, fsListEntryResponse{
+			Name: en.Name, Path: en.Path, Locked: en.Locked, Reason: en.Reason,
+		})
+	}
+	writeJSON(w, 200, out)
+}
+
+// handleFSAddRoot 记住用户手动输入且验证通过的授权目录（POST，带 CSRF 校验）。
+//
+// 从 GET /api/fs/list 里拆出来：GET 只做探测与临时并入，不能落盘改配置。
+// 这里重新跑一遍三步防线（AuthorizedPath 已含 Clean + 软链接解析 + 卷前缀重判），
+// 不信任前端传来的「刚才探测通过」结论。
+func (s *Server) handleFSAddRoot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
+		return
+	}
+	var body addBrowseRootReq
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
+		return
+	}
+	path := filepath.Clean(strings.TrimSpace(body.Path))
+	if !fsbrowse.AuthorizedPath(path) {
+		writeJSON(w, 400, errorResponse{Error: "该路径未在飞牛系统设置中授权，或不是本地存储目录"})
+		return
+	}
+	if err := s.cfg.AddBrowseRoot(path); err != nil {
+		writeJSON(w, 500, errorResponse{Error: "记住授权目录失败：" + publicErrorText(err.Error())})
+		return
+	}
+	writeJSON(w, 200, okResponse{OK: true})
 }
 
 // handleFSMkdir 在允许范围内新建文件夹，供日志/缓存/扫描目录选择使用。
@@ -2232,6 +2277,9 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		err = export.WriteReadableCSV(w, groups, opt)
 	}
 	if err != nil {
+		// 响应头（200 + Content-Disposition）早已写出，状态码改不了；但必须留痕：
+		// 磁盘满或客户端中途断开时用户拿到的是一份截断 CSV，而审计仍记「导出成功」。
+		applog.Warn("导出 CSV 写入失败（模式 %s，格式 %s）：%v", body.Mode, body.Format, err)
 		return
 	}
 }
@@ -2267,7 +2315,9 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	// v3.10.10（P2-10）：用解析后的真实路径打开，消除「校验通过后被换成软链接」的窗口。
 	p, ok := s.e.ResolveFilePath(r.URL.Query().Get("path"))
 	if !ok {
-		http.Error(w, "无效路径", http.StatusForbidden)
+		// 参数非法是 400，不是 403：403 留给 CSRF / 授权拒绝（由中间件处理）。
+		// 同时让审计中间件记下这次探测——它只跳过 401/403，400 会正常留档。
+		writeJSON(w, 400, errorResponse{Error: "路径参数无效"})
 		return
 	}
 	f, err := os.Open(p) // #nosec G304 G703 -- 路径已通过 Engine.ResolveFilePath 的卷范围与软链接校验
@@ -2298,7 +2348,8 @@ func (s *Server) handleThumb(w http.ResponseWriter, r *http.Request) {
 	// v3.10.10（P2-10）：缩略图缓存键也改用解析后的真实路径，与 raw 同口径。
 	p, ok := s.e.ResolveFilePath(r.URL.Query().Get("path"))
 	if !ok {
-		http.Error(w, "无效路径", http.StatusForbidden)
+		// 同 /api/raw：参数非法用 400，让操作记录留痕。
+		writeJSON(w, 400, errorResponse{Error: "路径参数无效"})
 		return
 	}
 	at := float64(intParam(r, "t", 0, 0, 1<<20))
@@ -2364,5 +2415,5 @@ func (s *Server) handleDiagAuthz(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
-	writeJSON(w, 200, fsbrowse.Diagnose())
+	writeJSON(w, 200, toDiagAuthzResp(fsbrowse.Diagnose()))
 }

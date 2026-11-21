@@ -57,5 +57,5 @@ func (s *Server) handleIndexRepair(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, errorResponse{Error: "索引体检失败（" + err.Error() + "）"})
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, toIndexRepairResultResp(res))
 }

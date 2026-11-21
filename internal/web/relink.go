@@ -43,7 +43,7 @@ func (s *Server) handleRelinkPreview(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorResponse{Error: msg})
 		return
 	}
-	writeJSON(w, 200, s.e.RelinkPreview(r.Context(), body.Keep, body.Paths))
+	writeJSON(w, 200, toRelinkResultResp(s.e.RelinkPreview(r.Context(), body.Keep, body.Paths)))
 }
 
 // handleRelink 执行硬链接合并（设计文档 9.1：os.Link 临时文件 + rename 原子替换）。
@@ -70,5 +70,5 @@ func (s *Server) handleRelink(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, errorResponse{Error: "执行失败"})
 		return
 	}
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, toRelinkResultResp(res))
 }

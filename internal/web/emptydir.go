@@ -37,5 +37,5 @@ func (s *Server) handleEmptyDirClean(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, errorResponse{Error: res.Conflict})
 		return
 	}
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, toEmptyDirResultResp(res))
 }

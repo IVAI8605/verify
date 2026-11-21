@@ -234,11 +234,23 @@ func AuthorizedPath(path string) bool {
 	if !volpath.IsVolRoot(p) {
 		return false
 	}
-	st, err := os.Stat(p)
+	// 三步防线的后两步：软链接解析 + 解析后再判一次卷根。
+	// 少了它们，/vol1/1000/x 这类指向 /etc 的软链接能通过 IsVolRoot 与 os.Stat，
+	// 调用方（GET /api/fs/list）会把未解析的路径 AddBrowseRoot 写进配置白名单，
+	// 目录选择器里留下一个永远打不开的条目，且每次该 GET 都会触发一次配置落盘。
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return false
+	}
+	real = filepath.Clean(real)
+	if real != p && !volpath.IsVolRoot(real) {
+		return false
+	}
+	st, err := os.Stat(real)
 	if err != nil || !st.IsDir() {
 		return false
 	}
-	return readable(p) == nil
+	return readable(real) == nil
 }
 
 // readable 探测目录是否可读（trimacl 授权探测）。

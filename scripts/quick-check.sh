@@ -118,11 +118,13 @@ if ! command -v python3 >/dev/null 2>&1; then
 elif [ ! -f tools/gen_types.py ]; then
 	echo "  SKIP  未找到 tools/gen_types.py"
 else
-	if python3 tools/gen_types.py --check >/tmp/verify-gen-types.log 2>&1; then
+	# 临时日志放系统盘外（2026-11-20：/tmp 所在系统盘仅 32G）
+	GENTYPES_LOG="${TMPDIR:-/tmp}/verify-gen-types.log"
+	if python3 tools/gen_types.py --check >"$GENTYPES_LOG" 2>&1; then
 		ok "webtypes/types.d.ts 与后端响应契约一致"
 	else
 		bad "webtypes/types.d.ts 与后端响应契约不一致："
-		head -3 /tmp/verify-gen-types.log
+		head -3 "$GENTYPES_LOG"
 		echo "        修复：python3 tools/gen_types.py"
 	fi
 fi

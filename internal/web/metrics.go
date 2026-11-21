@@ -38,7 +38,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
-	writeJSON(w, http.StatusOK, collectProcessMetrics())
+	writeJSON(w, http.StatusOK, toMetricsResp(collectProcessMetrics()))
 }
 
 // collectProcessMetrics 采集当前进程的 CPU / 内存 / IO / 协程数。

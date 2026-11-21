@@ -31,7 +31,7 @@ func (s *Server) handleFanjian(w http.ResponseWriter, r *http.Request) {
 	if s.scanBusy(w) {
 		return
 	}
-	writeJSON(w, 200, s.e.ConvertNames(r.Context(), body.Paths, body.ToTraditional))
+	writeJSON(w, 200, toFanjianResultResp(s.e.ConvertNames(r.Context(), body.Paths, body.ToTraditional)))
 }
 
 // handleFanjianUndo 撤销：POST /api/fanjian/undo {task_id}。

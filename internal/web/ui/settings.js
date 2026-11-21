@@ -124,7 +124,7 @@ async function transcodeCleanResidue(){
     }
     const preview = files.slice(0, 5).map(f => f.path).join('\n');
     if (!confirm('发现 ' + files.length + ' 个转码残留（扫描 ' + (r.scanned_dirs || 0) + ' 个目录），全部移入隔离区？\n\n' + preview + (files.length > 5 ? '\n…' : ''))) return;
-    const res = /** @type {MoveResultResp} */ (await postJSON('/api/transcode/residue/clean', { paths: files.map(f => f.path) }));
+    const res = /** @type {TrashResultResp} */ (await postJSON('/api/transcode/residue/clean', { paths: files.map(f => f.path) }));
     // v4.1.2：moved/failed 是路径数组，旧实现直接当数字拼串，空数组显示空白、非空显示路径列表。
     const movedN = Array.isArray(res.moved) ? res.moved.length : (res.moved || 0);
     const failedN = Array.isArray(res.failed) ? res.failed.length : (res.failed || 0);

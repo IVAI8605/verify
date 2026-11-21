@@ -216,25 +216,6 @@ func TestOKResponseJSONShape(t *testing.T) {
 	}
 }
 
-// TestFilesResponseJSONShape 锁死文件列表响应形态。
-func TestFilesResponseJSONShape(t *testing.T) {
-	got := jsonOf(t, filesResponse{
-		Files: []string{"/a", "/b"},
-		Total: 2,
-		Limit: 100,
-		Order: "small",
-	})
-	for _, key := range []string{"files", "total", "limit", "order"} {
-		if _, ok := got[key]; !ok {
-			t.Errorf("响应缺少键 %q，实际: %v", key, got)
-		}
-	}
-	files, ok := got["files"].([]any)
-	if !ok || len(files) != 2 {
-		t.Fatalf("files 结构不对: %v", got["files"])
-	}
-}
-
 // ── 错误收敛（SEC-8 安全机制，v4.0.0 重点回归项）────────────────────
 
 // TestSanitizeErrorPayloadStruct 确认错误收敛对具名 struct 仍然生效。

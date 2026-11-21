@@ -370,6 +370,13 @@ func (e *Engine) planRename(p string, kind health.Kind, opt health.NameOptions) 
 // TrashHealthFiles 把文件移入隔离区（不永久删除），并记一条审计。
 func (e *Engine) TrashHealthFiles(ctx context.Context, paths []string) *HealthOpResult {
 	res := &HealthOpResult{Items: []HealthOpItem{}}
+	rel, gerr := e.acquireTask(taskguard.KindTrash, "健康页批量隔离", taskguard.GroupIO, taskguard.ResDiskIO)
+	if gerr != nil {
+		res.Failed = 1
+		res.Items = append(res.Items, HealthOpItem{Error: gerr.Error()})
+		return res
+	}
+	defer rel("done")
 	unlock := e.lockWrites()
 	defer unlock()
 	// v3.10.10（第五轮 P1-3）：文件已进隔离区后，记录与索引必须写完。

@@ -38,7 +38,7 @@ func (s *Server) handleMovePreview(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorResponse{Error: msg})
 		return
 	}
-	writeJSON(w, 200, s.e.MovePreview(r.Context(), body.Target, body.Paths))
+	writeJSON(w, 200, toMoveFilesResultResp(s.e.MovePreview(r.Context(), body.Target, body.Paths)))
 }
 
 // handleMove 执行批量移动（同卷 os.Rename，冲突追加不覆盖，audit 可撤销）。
@@ -60,7 +60,7 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorResponse{Error: msg})
 		return
 	}
-	writeJSON(w, 200, s.e.MoveFiles(r.Context(), body.Target, body.Paths))
+	writeJSON(w, 200, toMoveFilesResultResp(s.e.MoveFiles(r.Context(), body.Target, body.Paths)))
 }
 
 // handleMoveUndo 撤销一次移动任务（审计逆序 rename 回原位）。
@@ -120,7 +120,7 @@ func (s *Server) handleMoveDirPreview(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorResponse{Error: msg})
 		return
 	}
-	writeJSON(w, 200, s.e.MoveDirPreview(r.Context(), body.Src, body.Dst))
+	writeJSON(w, 200, toMoveDirResultResp(s.e.MoveDirPreview(r.Context(), body.Src, body.Dst)))
 }
 
 // handleMoveDir 执行目录移动（同卷 rename，索引按前缀改写，审计可撤销）。
@@ -142,7 +142,7 @@ func (s *Server) handleMoveDir(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorResponse{Error: msg})
 		return
 	}
-	writeJSON(w, 200, s.e.MoveDir(r.Context(), body.Src, body.Dst))
+	writeJSON(w, 200, toMoveDirResultResp(s.e.MoveDir(r.Context(), body.Src, body.Dst)))
 }
 
 // handleMoveDirUndo 撤销一次目录移动（rename 回原位 + 索引前缀改回）。
