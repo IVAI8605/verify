@@ -57,7 +57,11 @@ var (
 	type7Z   = mediaType{Name: "7z", Exts: []string{"7z"}, Suggest: "7z"}
 	typeFLAC = mediaType{Name: "flac", Exts: []string{"flac"}, Suggest: "flac"}
 	typeMP3  = mediaType{Name: "mp3", Exts: []string{"mp3", "mp2"}, Suggest: "mp3"}
-	typeWAV  = mediaType{Name: "wav", Exts: []string{"wav"}, Suggest: "wav"}
+	// typeAAC 是 ADTS 裸流（2026-11-25）：同步字 FF F1 / FF F9，layer 位为 00。
+	// 旧实现把它归进 MPEG 音频帧 → 建议改成 mp3，实际 aac 内容改成 mp3 是制造错误。
+	// 只对 ADTS 裸流生效；MP4 容器里的 AAC（ftyp M4A ）由 sniffFtyp 单独处理。
+	typeAAC = mediaType{Name: "aac", Exts: []string{"aac", "adts"}, Suggest: "aac"}
+	typeWAV = mediaType{Name: "wav", Exts: []string{"wav"}, Suggest: "wav"}
 	// typeHTML/typeMPEGPS 为同族归一（10.7）新增嗅探：html 前缀找 <html；mpeg-ps 起始码。
 	typeHTML   = mediaType{Name: "html", Exts: []string{"html", "htm"}, Suggest: "html"}
 	typeMPEGPS = mediaType{Name: "mpegps", Exts: []string{"mpg", "mpeg", "vob"}, Suggest: "mpg"}
@@ -199,7 +203,12 @@ func Sniff(head []byte) mediaType {
 	case isTransportStream(head):
 		return typeTS
 	case head[0] == 0xFF && len(head) > 1 && (head[1]&0xE0) == 0xE0:
-		// MPEG 音频帧同步头
+		// MPEG 音频帧同步头（11 位全 1）。第二字节的 layer 位（bit1-2）区分：
+		//   layer=00 → ADTS 裸流 AAC（FF F1 / FF F9），建议 aac（2026-11-25 实战误判修复）
+		//   layer≠00 → MP3 帧头（FF FB / FF F3 / FF F2 等），仍建议 mp3
+		if head[1]&0x06 == 0 {
+			return typeAAC
+		}
 		return typeMP3
 	case len(head) >= 4 && head[0] == 0x00 && head[1] == 0x00 && head[2] == 0x01 && head[3] == 0xBA:
 		// MPEG-PS 起始码（与 TS 的 0x47 不冲突）
@@ -216,6 +225,7 @@ func Sniff(head []byte) mediaType {
 // 在健康检测里会被标成扩展名不符、在转码入队时被误拒。
 // 做法是允许首个 0x47 在前 8 字节内，再按三种包长各验证后两包同步字节。
 func isTransportStream(head []byte) bool {
+	// 常规路径：首个 0x47 在前 8 字节内，再按三种包长验证后两包同步字节。
 	limit := 8
 	if len(head) < limit {
 		limit = len(head)
@@ -229,6 +239,12 @@ func isTransportStream(head []byte) bool {
 				return true
 			}
 		}
+	}
+	// 2026-11-25 实战：一批 ts 文件头部有前导乱码（首字节非 0x47），
+	// 但标准 188 包长下 188/376 偏移仍是 0x47 同步字。只验后两包，
+	// 不要求首包对齐，避免把 ffprobe 实锤的 mpegts 判成 unknown。
+	if len(head) > 2*188 && head[188] == 0x47 && head[376] == 0x47 {
+		return true
 	}
 	return false
 }
@@ -321,7 +337,7 @@ var knownExts = func() map[string]bool {
 	for _, mt := range []mediaType{
 		typeMP4, typeMOV, typeM4V, typeM4A, type3GP, typeMKV, typeWebM, typeAVI, typeTS,
 		typeFLV, typeWMV, typeJPG, typePNG, typeGIF, typeWEBP, typeBMP, typeTIFF,
-		typePDF, typeZIP, typeRAR, type7Z, typeFLAC, typeMP3, typeWAV,
+		typePDF, typeZIP, typeRAR, type7Z, typeFLAC, typeMP3, typeWAV, typeAAC,
 		typeHTML, typeMPEGPS,
 	} {
 		for _, e := range mt.Exts {
@@ -332,3 +348,20 @@ var knownExts = func() map[string]bool {
 }()
 
 func isKnownExt(ext string) bool { return knownExts[ext] }
+
+// IsSafeForceExt 校验 force 改名时调用方指定的目标扩展名（2026-11-25 建议 4）。
+// force 只在内容嗅探不出来时由外部工具（ffprobe）实锤后使用，服务端无法自证，
+// 因此目标扩展名必须落在已知媒体类型白名单里，且不含路径分隔符/点/控制字符，
+// 防止把任意字符串拼进文件名造成越界或路径注入。
+func IsSafeForceExt(ext string) bool {
+	e := strings.ToLower(strings.Trim(ext, " \t"))
+	if e == "" || strings.ContainsAny(e, "./\\") {
+		return false
+	}
+	for _, r := range e {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return isKnownExt(e)
+}

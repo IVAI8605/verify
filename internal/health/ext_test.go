@@ -284,6 +284,79 @@ func TestCheckExtQuietFamilies(t *testing.T) {
 	}
 }
 
+// TestIsTransportStreamLeadGarbage 回归 2026-11-25 实战：一批 mpegts 前几字节是 garbage，
+// 但 188/376 偏移是标准 TS 包同步字（0x47 40/50 00 10）。旧实现要求首 0x47 在前 8 字节内，
+// 把这批文件判成 unknown，无法批量修正。只验后两包同步即可确认。
+func TestIsTransportStreamLeadGarbage(t *testing.T) {
+	h := make([]byte, 512)
+	copy(h, []byte{0x04, 0xAC, 0xC7, 0x19, 0xBB, 0xCC}) // 前导乱码
+	copy(h[188:], []byte{0x47, 0x40, 0x00, 0x10})
+	copy(h[376:], []byte{0x47, 0x50, 0x00, 0x10})
+	if !isTransportStream(h) {
+		t.Fatal("188/376 偏移有 TS 包同步字，应识别为 mpegts")
+	}
+	if got := Sniff(h).Name; got != "mpegts" {
+		t.Fatalf("Sniff 应识别为 mpegts，实际 %q", got)
+	}
+	// 负向：只有首字节 0x47、后续无同步，不应误判
+	neg := make([]byte, 512)
+	neg[0] = 0x47
+	if isTransportStream(neg) {
+		t.Fatal("仅首字节 0x47 不足以判定 TS")
+	}
+	// 回归：标准 TS（首字节即 0x47）仍识别
+	std := make([]byte, 512)
+	copy(std, []byte{0x47, 0x40, 0x00, 0x10})
+	copy(std[188:], []byte{0x47, 0x40, 0x00, 0x10})
+	copy(std[376:], []byte{0x47, 0x40, 0x00, 0x10})
+	if !isTransportStream(std) {
+		t.Fatal("标准 TS 应识别")
+	}
+}
+
+// TestIsSafeForceExt 回归 2026-11-25 实战建议 4：unknown 类给外部验证过的调用方一条 force 通道。
+// 目标扩展名必须落在已知媒体扩展名白名单，防止把任意字符串拼进文件名造成路径注入。
+func TestIsSafeForceExt(t *testing.T) {
+	for _, ext := range []string{"ts", "mp4", "aac", "MP4", " mkv "} {
+		if !IsSafeForceExt(ext) {
+			t.Errorf("%q 是合法目标扩展名", ext)
+		}
+	}
+	for _, ext := range []string{"", "../evil", "a/b", "ts/../../x", "exe", "a.b", "ts\n", "tar.gz"} {
+		if IsSafeForceExt(ext) {
+			t.Errorf("%q 不是安全的目标扩展名，应拒绝", ext)
+		}
+	}
+}
+
+// TestSniffADTSAAC 回归 2026-11-25 实战：.aac 文件（ADTS 同步字 FF F1）被误判成 mp3，
+// 批量改名把 86 个 aac 改成 mp3，反而制造错误。ADTS 必须识别为 aac。
+func TestSniffADTSAAC(t *testing.T) {
+	// 真实样本头：ff f1 4c 80 03 df fc de ...（2026-11-25 aac_misjudged.txt）
+	head := []byte{0xFF, 0xF1, 0x4C, 0x80, 0x03, 0xDF, 0xFC, 0xDE}
+	if got := Sniff(head).Name; got != "aac" {
+		t.Fatalf("ADTS 同步字应识别为 aac，实际 %q", got)
+	}
+	// MPEG-2 AAC：FF F9
+	if got := Sniff([]byte{0xFF, 0xF9, 0x4C, 0x80}).Name; got != "aac" {
+		t.Fatalf("MPEG-2 ADTS 应识别为 aac，实际 %q", got)
+	}
+	// .aac 文件配真 ADTS 头不应被建议改名
+	if f, bad := CheckExt("song.aac", head, "off"); bad {
+		t.Fatalf("aac 文件配 ADTS 头不应报问题，实际 reasons=%v suggest=%q", f.Reasons, f.SuggestExt)
+	}
+	// 真 mp3 帧头（FF FB / FF F3）与 ID3 不能回归成 aac
+	for _, h := range [][]byte{{0xFF, 0xFB, 0x90, 0x00}, {0xFF, 0xF3, 0x90, 0x00}, []byte("ID3\x04\x00\x00")} {
+		if got := Sniff(h).Name; got != "mp3" {
+			t.Fatalf("MPEG 音频帧/ID3 应识别为 mp3，实际 %q（头 %x）", got, h)
+		}
+	}
+	// 真 mp3 文件配 aac 头仍报 mismatch，且建议 aac
+	if f, bad := CheckExt("song.mp3", head, "off"); !bad || f.SuggestExt != "aac" {
+		t.Fatalf("mp3 文件配 ADTS 头应建议改 aac，实际 bad=%v suggest=%q", bad, f.SuggestExt)
+	}
+}
+
 // TestUnifyTarget 归一映射与开关（10.7.1/10.7.2）。
 func TestUnifyTarget(t *testing.T) {
 	cases := []struct {

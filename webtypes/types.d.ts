@@ -330,11 +330,12 @@ interface HealthItemsResp {
   items: any;
 }
 
-/** 后端 healthOpItemResp（3 个字段）。 */
+/** 后端 healthOpItemResp（4 个字段）。 */
 interface HealthOpItemResp {
   path: string;
   new_path?: string;
   error?: string;
+  class?: string;
 }
 
 /** 后端 healthOpResultResp（5 个字段）。 */

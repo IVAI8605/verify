@@ -153,6 +153,12 @@ type healthPathsRequest struct {
 	NonCJK          bool     `json:"non_cjk"`
 	// OnlyUppercase 为真时只处理扩展名含大写的文件
 	OnlyUppercase bool `json:"only_uppercase"`
+	// Force 为真时允许把「内容无法识别」的条目按 ForceExt 改名（2026-11-25 建议 4）。
+	// 调用方须先用外部工具确认真实类型；服务端仍做白名单校验，默认关闭。
+	Force    bool   `json:"force"`
+	ForceExt string `json:"force_ext"`
+	// DryRun 为真时只返回改名计划与风险，不落盘、不记审计（2026-11-25 建议 8）。
+	DryRun bool `json:"dry_run"`
 }
 
 // handleHealthRename 批量修正扩展名或文件名。
@@ -185,7 +191,12 @@ func (s *Server) handleHealthRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opt := health.NameOptions{RestrictCharset: body.RestrictCharset, NonCJKNonASCII: body.NonCJK}
-	writeJSON(w, 200, toHealthOpResultResp(s.e.RenameHealthFiles(r.Context(), kind, body.Paths, opt, body.OnlyUppercase)))
+	extra := engine.HealthRenameExtra{Force: body.Force, ForceExt: body.ForceExt}
+	if body.DryRun {
+		writeJSON(w, 200, toHealthOpResultResp(s.e.DryRunHealthRename(r.Context(), kind, body.Paths, opt, body.OnlyUppercase, extra)))
+		return
+	}
+	writeJSON(w, 200, toHealthOpResultResp(s.e.RenameHealthFiles(r.Context(), kind, body.Paths, opt, body.OnlyUppercase, extra)))
 }
 
 // handleHealthFixEncoding 修复库里所有非 UTF-8 文件名（v3.12.0）。

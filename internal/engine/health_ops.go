@@ -18,11 +18,31 @@ import (
 	"verify/internal/taskguard"
 )
 
+// HealthRenameExtra 是健康改名的可选参数（2026-11-25 建议 4）。
+// Force 只对「内容无法识别」的扩展名类条目生效：调用方用外部工具（ffprobe）
+// 实锤真实类型后，显式指定 ForceExt 执行改名。默认零值保持原有拒绝行为。
+type HealthRenameExtra struct {
+	Force    bool
+	ForceExt string
+}
+
 // HealthOpItem 是单条文件操作的结果。
 type HealthOpItem struct {
 	Path    string `json:"path"`
 	NewPath string `json:"new_path,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// Class 是结果的细分类型（2026-11-25 建议 7）：stale_path 表示源路径已失效
+	// （典型为父目录被前一批改名），与真正没改成的 failed 区分，避免脚本误读。
+	Class string `json:"class,omitempty"`
+}
+
+// classifyRenameFailure 在 rename 失败时区分「路径已失效」与「普通失败」。
+// statErr 是失败后再对源路径做 Lstat 的结果：不存在（含父目录消失）即 stale_path。
+func classifyRenameFailure(_ string, statErr error) string {
+	if statErr != nil && os.IsNotExist(statErr) {
+		return "stale_path"
+	}
+	return ""
 }
 
 // HealthOpResult 是一次批量操作的汇总。
@@ -59,7 +79,8 @@ type healthRenameJob struct {
 	path   string
 	target string
 	err    string
-	skip   bool // 无需改动（如只改大写扩展名时扩展名本来就规范）
+	class  string // rename 失败时的细分类型（如 stale_path）
+	skip   bool   // 无需改动（如只改大写扩展名时扩展名本来就规范）
 	done   bool
 }
 
@@ -72,7 +93,11 @@ type healthRenameJob struct {
 // 上万条时几乎全耗在等 IO 与开事务上。现在按 200 个一批：
 // 批内并发计划（读文件头、Lstat）与并发 rename，成功后一次事务写审计、
 // 一次事务删健康行，索引同步仍走已有的批量接口。
-func (e *Engine) RenameHealthFiles(ctx context.Context, kind health.Kind, paths []string, opt health.NameOptions, onlyUppercase bool) *HealthOpResult {
+func (e *Engine) RenameHealthFiles(ctx context.Context, kind health.Kind, paths []string, opt health.NameOptions, onlyUppercase bool, extra ...HealthRenameExtra) *HealthOpResult {
+	var ex HealthRenameExtra
+	if len(extra) > 0 {
+		ex = extra[0]
+	}
 	// v3.25.0（P1-1）：批量改名是长任务，之前没登记闸门，可与扫描/隔离并发改同一批文件。
 	done, gerr := e.acquireTask(taskguard.KindRename, "按检测结果改名", taskguard.GroupIO, taskguard.ResDiskIO)
 	if gerr != nil {
@@ -107,7 +132,7 @@ func (e *Engine) RenameHealthFiles(ctx context.Context, kind health.Kind, paths 
 		if end > len(paths) {
 			end = len(paths)
 		}
-		jobs := e.planHealthRenames(paths[start:end], kind, opt, onlyUppercase, workers)
+		jobs := e.planHealthRenames(paths[start:end], kind, opt, onlyUppercase, workers, ex)
 		e.execHealthRenames(ctx, jobs, workers)
 
 		ok := make([]*healthRenameJob, 0, len(jobs))
@@ -167,7 +192,7 @@ func (e *Engine) RenameHealthFiles(ctx context.Context, kind health.Kind, paths 
 				continue
 			case j.err != "":
 				res.Failed++
-				res.Items = append(res.Items, HealthOpItem{Path: j.path, Error: j.err})
+				res.Items = append(res.Items, HealthOpItem{Path: j.path, Error: j.err, Class: j.class})
 				if j.done {
 					// 审计失败且回滚失败：文件实际已在目标路径，按改名预期对账。
 					snap.MarkMoved(j.path, j.target, opExpectRenamed)
@@ -205,7 +230,7 @@ func (e *Engine) RenameHealthFiles(ctx context.Context, kind health.Kind, paths 
 //
 // 并发计划时两个文件可能算出同一个目标名，而 Linux 的 rename 会静默覆盖，
 // 因此执行前必须按输入顺序再确认一次唯一性（同批内已占用的名字加 _1 后缀）。
-func (e *Engine) planHealthRenames(paths []string, kind health.Kind, opt health.NameOptions, onlyUppercase bool, workers int) []healthRenameJob {
+func (e *Engine) planHealthRenames(paths []string, kind health.Kind, opt health.NameOptions, onlyUppercase bool, workers int, ex HealthRenameExtra) []healthRenameJob {
 	jobs := make([]healthRenameJob, len(paths))
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
@@ -215,7 +240,7 @@ func (e *Engine) planHealthRenames(paths []string, kind health.Kind, opt health.
 		go func(i int, p string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			jobs[i] = e.planHealthRename(p, kind, opt, onlyUppercase)
+			jobs[i] = e.planHealthRename(p, kind, opt, onlyUppercase, ex)
 		}(i, p)
 	}
 	wg.Wait()
@@ -244,7 +269,7 @@ func (e *Engine) planHealthRenames(paths []string, kind health.Kind, opt health.
 }
 
 // planHealthRename 计算单个文件的目标路径；target 为空表示无需改动。
-func (e *Engine) planHealthRename(p string, kind health.Kind, opt health.NameOptions, onlyUppercase bool) healthRenameJob {
+func (e *Engine) planHealthRename(p string, kind health.Kind, opt health.NameOptions, onlyUppercase bool, ex HealthRenameExtra) healthRenameJob {
 	p = filepath.Clean(p)
 	job := healthRenameJob{path: p}
 	if reason := e.protectedReasonResolved(p); reason != "" {
@@ -261,7 +286,7 @@ func (e *Engine) planHealthRename(p string, kind health.Kind, opt health.NameOpt
 		job.skip = true
 		return job
 	}
-	target, errMsg := e.planRename(p, kind, opt)
+	target, errMsg := e.planRename(p, kind, opt, ex)
 	if errMsg != "" {
 		job.err = errMsg
 		return job
@@ -300,6 +325,10 @@ func (e *Engine) execHealthRenames(ctx context.Context, jobs []healthRenameJob, 
 			// 与规则改名/撤销同一口径（冲突时失败，不静默覆盖）。
 			if err := renameNoOverwrite(j.path, j.target); err != nil {
 				j.err = renameFailText(err)
+				// 2026-11-25 建议 7：源路径已不存在记为 stale_path，供结果里单列。
+				if _, statErr := os.Lstat(j.path); statErr != nil {
+					j.class = classifyRenameFailure(j.path, statErr)
+				}
 				return
 			}
 			j.done = true
@@ -328,7 +357,7 @@ func (e *Engine) syncRenamedIndex(ctx context.Context, pairs [][2]string) {
 }
 
 // planRename 计算目标路径；返回空串且无错误表示无需改动。
-func (e *Engine) planRename(p string, kind health.Kind, opt health.NameOptions) (string, string) {
+func (e *Engine) planRename(p string, kind health.Kind, opt health.NameOptions, ex HealthRenameExtra) (string, string) {
 	dir := filepath.Dir(p)
 	name := filepath.Base(p)
 
@@ -346,11 +375,19 @@ func (e *Engine) planRename(p string, kind health.Kind, opt health.NameOptions) 
 		}
 		f, _ := health.CheckExt(name, head, e.cfg.Get().UnifyExt)
 		// v3.15.0：内容认不出来时拒绝改名。无法确定目标扩展名，猜一个等于制造错误；
-		// 这类条目在界面上也只作提示，不参与批量操作。
+		// 2026-11-25 建议 4：调用方用外部工具实锤后可带 force + 目标扩展名显式执行。
 		if len(f.Reasons) > 0 && f.Reasons[0] == health.ReasonUnknown {
-			return "", "内容类型无法识别，未做判断，不执行改名"
+			if !ex.Force {
+				return "", "内容类型无法识别，未做判断，不执行改名"
+			}
+			// force 的目标扩展名必须在已知媒体白名单里，防止路径注入/瞎猜。
+			if !health.IsSafeForceExt(ex.ForceExt) {
+				return "", "force 改名的目标扩展名非法或不在已知类型白名单"
+			}
+			suggest = strings.ToLower(strings.TrimSpace(ex.ForceExt))
+		} else {
+			suggest = f.SuggestExt
 		}
-		suggest = f.SuggestExt
 	}
 
 	target, ok := health.BuildTarget(kind, name, suggest, opt)
@@ -365,6 +402,34 @@ func (e *Engine) planRename(p string, kind health.Kind, opt health.NameOptions) 
 		_, err := os.Lstat(candidate)
 		return err == nil
 	}), ""
+}
+
+// DryRunHealthRename 只计算改名的计划与风险，不落盘、不记审计、不同步索引
+// （2026-11-25 建议 8）。返回结构与批量改名一致：每条 NewPath 是计划目标，
+// Error 是风险/拒绝原因，Class 固定为 dry_run，Done/Failed 恒为 0。
+func (e *Engine) DryRunHealthRename(ctx context.Context, kind health.Kind, paths []string, opt health.NameOptions, onlyUppercase bool, extra ...HealthRenameExtra) *HealthOpResult {
+	res := &HealthOpResult{Items: []HealthOpItem{}}
+	if ctx.Err() != nil {
+		return res
+	}
+	var ex HealthRenameExtra
+	if len(extra) > 0 {
+		ex = extra[0]
+	}
+	jobs := e.planHealthRenames(paths, kind, opt, onlyUppercase, healthRenameWorkers(), ex)
+	for _, j := range jobs {
+		item := HealthOpItem{Path: j.path, Class: "dry_run"}
+		switch {
+		case j.err != "":
+			item.Error = j.err
+		case j.skip:
+			item.Error = "无需改名"
+		default:
+			item.NewPath = j.target
+		}
+		res.Items = append(res.Items, item)
+	}
+	return res
 }
 
 // TrashHealthFiles 把文件移入隔离区（不永久删除），并记一条审计。
@@ -516,6 +581,15 @@ func (e *Engine) UndoHealthTask(ctx context.Context, taskID int64) (*HealthOpRes
 			continue
 		}
 		if _, err := os.Lstat(it.NewPath); err != nil {
+			// 2026-11-25 建议 9：改后路径已不存在，且原路径已恢复 → 说明这条
+			// 已经撤销过了，幂等返回「已撤销」，方便脚本重试不误判为失败。
+			if _, origErr := os.Lstat(it.OriginalPath); origErr == nil {
+				res.Done++
+				res.Items = append(res.Items, HealthOpItem{
+					Path: it.OriginalPath, NewPath: it.NewPath, Class: "already_undone",
+				})
+				continue
+			}
 			res.Failed++
 			res.Items = append(res.Items, HealthOpItem{Path: it.OriginalPath, Error: "改动后的文件已不存在"})
 			continue

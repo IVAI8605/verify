@@ -16,6 +16,11 @@ import (
 // pngHead 是一段足以被嗅探识别为 PNG 的文件头。
 var pngHead = append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, make([]byte, 64)...)
 
+// headMP4ForEngine 是一段足以被 Sniff 识别为 mp4 的文件头。
+func headMP4ForEngine() []byte {
+	return append([]byte{0x00, 0x00, 0x00, 0x18}, []byte("ftypisom")...)
+}
+
 // useScanRoot 把临时目录登记为受管卷，让 VolumeOf / ValidPath 生效。
 func useScanRoot(t *testing.T, root string) {
 	t.Helper()
@@ -42,6 +47,168 @@ func TestRenameHealthFilesRejectsUnknownExt(t *testing.T) {
 	}
 	if len(res.Items) != 1 || !strings.Contains(res.Items[0].Error, "无法识别") {
 		t.Fatalf("失败原因应说明内容无法识别，实际 %+v", res.Items)
+	}
+}
+
+// TestDryRunHealthRename 回归 2026-11-25 建议 8：dry-run 只给计划不落盘，
+// 每条带目标扩展名与风险分类，供脚本先全量预演。
+func TestDryRunHealthRename(t *testing.T) {
+	root := t.TempDir()
+	useScanRoot(t, root)
+	e, _ := newHealthTestEngine(t)
+
+	// 大写扩展名 → 计划转小写
+	upper := filepath.Join(root, "MOVIE.MP4")
+	if err := os.WriteFile(upper, headMP4ForEngine(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// 内容认不出 → 风险提示
+	unknown := filepath.Join(root, "movie.mkv")
+	if err := os.WriteFile(unknown, []byte("totally unknown bytes here"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := e.DryRunHealthRename(context.Background(), health.KindExt,
+		[]string{upper, unknown}, health.NameOptions{}, false)
+	if len(res.Items) != 2 {
+		t.Fatalf("dry-run 应逐条返回，实际 %d 条：%+v", len(res.Items), res.Items)
+	}
+	if res.Done != 0 || res.Failed != 0 {
+		t.Fatalf("dry-run 不应执行任何改动，实际 done=%d failed=%d", res.Done, res.Failed)
+	}
+	// 原文件都还在，内容没变
+	for _, p := range []string{upper, unknown} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("dry-run 不得改磁盘：%s 不见了", p)
+		}
+	}
+	// 能识别出一条有计划、一条有风险
+	var hasPlan, hasRisk bool
+	for _, it := range res.Items {
+		if it.NewPath != "" {
+			hasPlan = true
+		}
+		if it.Error != "" {
+			hasRisk = true
+		}
+	}
+	if !hasPlan || !hasRisk {
+		t.Fatalf("dry-run 应同时给出计划与风险，实际 %+v", res.Items)
+	}
+}
+
+// TestClassifyRenameFailure 回归 2026-11-25 建议 7：源路径已不存在（父目录被前一批改名）
+// 要单列 stale_path，不能和普通 failed 混在一起让脚本误读成"没改成"。
+func TestClassifyRenameFailure(t *testing.T) {
+	root := t.TempDir()
+	exists := filepath.Join(root, "exists.txt")
+	if err := os.WriteFile(exists, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, statErr := os.Lstat(filepath.Join(root, "gone.txt"))
+	if statErr == nil {
+		t.Fatal("测试前提：gone.txt 应不存在")
+	}
+	if got := classifyRenameFailure(filepath.Join(root, "gone.txt"), statErr); got != "stale_path" {
+		t.Fatalf("源路径不存在应判 stale_path，实际 %q", got)
+	}
+	if got := classifyRenameFailure(exists, nil); got != "" {
+		t.Fatalf("源路径存在应判普通失败，实际 %q", got)
+	}
+}
+
+// TestUndoHealthTaskIdempotent 回归 2026-11-25 建议 9：重复撤销同一 task_id
+// 应返回「已撤销」而不是逐条失败，方便脚本重试。
+func TestUndoHealthTaskIdempotent(t *testing.T) {
+	root := t.TempDir()
+	useScanRoot(t, root)
+	e, _ := newHealthTestEngine(t)
+
+	src := filepath.Join(root, "MOVIE.MP4")
+	if err := os.WriteFile(src, headMP4ForEngine(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := e.RenameHealthFiles(context.Background(), health.KindExt, []string{src}, health.NameOptions{}, false)
+	if res.Done != 1 {
+		t.Fatalf("准备阶段大写扩展名改名应成功：%+v", res)
+	}
+	// 第一次撤销
+	if _, err := e.UndoHealthTask(context.Background(), res.TaskID); err != nil {
+		t.Fatalf("首次撤销失败：%v", err)
+	}
+	// 第二次撤销：应幂等返回，不报失败
+	again, err := e.UndoHealthTask(context.Background(), res.TaskID)
+	if err != nil {
+		t.Fatalf("重复撤销不应报错：%v", err)
+	}
+	if again.Failed != 0 {
+		t.Fatalf("重复撤销应视为已撤销，不应失败：%+v", again.Items)
+	}
+	var allUndone bool
+	for _, it := range again.Items {
+		if it.Class != "already_undone" {
+			t.Fatalf("重复撤销的条目应标 already_undone，实际 %q", it.Class)
+		}
+		allUndone = true
+	}
+	if !allUndone || len(again.Items) == 0 {
+		t.Fatal("应至少有一条 already_undone 结果")
+	}
+}
+
+// TestRenameHealthFilesForceUnknown 回归 2026-11-25 建议 4：unknown 类默认拒绝，
+// 但调用方用外部工具（ffprobe）实锤后可用 force + 目标扩展名显式执行，且仍可撤销。
+func TestRenameHealthFilesForceUnknown(t *testing.T) {
+	root := t.TempDir()
+	useScanRoot(t, root)
+	e, _ := newHealthTestEngine(t)
+
+	src := filepath.Join(root, "movie.mkv")
+	// 前导乱码但 188/376 是 TS 同步字——现有 Sniff 已能识别为 mpegts，
+	// 这里用真正认不出的内容来验证 force 通道。
+	if err := os.WriteFile(src, []byte("totally unknown bytes here"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// 不带 force 仍拒绝
+	res := e.RenameHealthFiles(context.Background(), health.KindExt, []string{src}, health.NameOptions{}, false)
+	if res.Done != 0 || res.Failed != 1 {
+		t.Fatalf("无 force 时 unknown 应拒绝，实际 %+v", res)
+	}
+	// force + 合法扩展名 → 改名成功
+	res = e.RenameHealthFiles(context.Background(), health.KindExt, []string{src}, health.NameOptions{}, false,
+		HealthRenameExtra{Force: true, ForceExt: "ts"})
+	if res.Done != 1 || res.Failed != 0 {
+		t.Fatalf("force 后 unknown 应改名成功，实际 %+v items=%+v", res, res.Items)
+	}
+	want := filepath.Join(root, "movie.ts")
+	if _, err := os.Stat(want); err != nil {
+		t.Fatalf("应改名为 %s：%v", want, err)
+	}
+	// 撤销链仍完整
+	if _, err := e.UndoHealthTask(context.Background(), res.TaskID); err != nil {
+		t.Fatalf("force 改名应可撤销：%v", err)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Fatal("撤销后原文件应恢复")
+	}
+}
+
+// TestRenameHealthFilesForceExtInvalid 非法目标扩展名即使 force 也要拒绝。
+func TestRenameHealthFilesForceExtInvalid(t *testing.T) {
+	root := t.TempDir()
+	useScanRoot(t, root)
+	e, _ := newHealthTestEngine(t)
+
+	src := filepath.Join(root, "movie.mkv")
+	if err := os.WriteFile(src, []byte("totally unknown bytes here"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := e.RenameHealthFiles(context.Background(), health.KindExt, []string{src}, health.NameOptions{}, false,
+		HealthRenameExtra{Force: true, ForceExt: "../evil"})
+	if res.Done != 0 || res.Failed != 1 {
+		t.Fatalf("非法 force 扩展名应拒绝，实际 %+v", res)
+	}
+	if len(res.Items) == 0 || !strings.Contains(res.Items[0].Error, "目标扩展名") {
+		t.Fatalf("失败原因应说明目标扩展名非法，实际 %+v", res.Items)
 	}
 }
 

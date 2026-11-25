@@ -34,6 +34,8 @@ type healthOpItemResp struct {
 	Path    string `json:"path"`
 	NewPath string `json:"new_path,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// Class 细分结果类型（2026-11-25）：stale_path 表示源路径已失效，与 failed 区分。
+	Class string `json:"class,omitempty"`
 }
 
 // healthOpResultResp 是改名 / 修编码 / 移隔离区 / 撤销的响应（对应 engine.HealthOpResult）。
@@ -56,7 +58,7 @@ func toHealthOpResultResp(src *engine.HealthOpResult) healthOpResultResp {
 	out.Items = make([]healthOpItemResp, 0, len(src.Items))
 	for _, it := range src.Items {
 		out.Items = append(out.Items, healthOpItemResp{
-			Path: it.Path, NewPath: it.NewPath, Error: it.Error,
+			Path: it.Path, NewPath: it.NewPath, Error: it.Error, Class: it.Class,
 		})
 	}
 	if src.Reconcile != nil {
