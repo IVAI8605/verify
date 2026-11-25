@@ -1042,9 +1042,14 @@ async function relinkConfirm(){
     S.relinkJobs = null;
   }
   showResultModal('硬链接合并结果', items);
-  S.sel = {};
-  await refreshStatus();
-  await refreshView();
+  // v4.2.1：健康页来源不清文件页的勾选状态；完成后刷新健康列表。
+  if (typeof S.tab === 'string' && S.tab === 'health') {
+    await loadHealth();
+  } else {
+    S.sel = {};
+    await refreshStatus();
+    await refreshView();
+  }
 }
 
 // ---------- 大文件 Top N（v1.14.0 引入 10.1）----------
@@ -1178,9 +1183,14 @@ async function moveConfirm(){
     <div class="hint">成功 ${okCount(items)} 个，失败 ${items.length - okCount(items)} 个。${crossHint}移动可用审计撤销（恢复到原目录）。</div>
     <div class="pm-actions">${undoBtn}<button class="btn primary" data-act="modal-cancel">关闭</button></div>`;
   setModal('移动结果', html, null);
-  S.sel = {};
-  await refreshStatus();
-  await refreshView();
+  // v4.2.1：健康页来源不清文件页的勾选状态；完成后刷新健康列表。
+  if (typeof S.tab === 'string' && S.tab === 'health') {
+    await loadHealth();
+  } else {
+    S.sel = {};
+    await refreshStatus();
+    await refreshView();
+  }
 }
 
 function okCount(items){ return (items || []).filter(i => i.ok).length; }

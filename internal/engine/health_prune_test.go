@@ -100,7 +100,7 @@ func TestIgnoreHealthFiles(t *testing.T) {
 		t.Fatalf("忽略表应有 1 条，实际 %+v", ig)
 	}
 	// 文件未变：候选被过滤
-	if got := e.filterIgnoredPaths(ctx, []string{p}); len(got) != 0 {
+	if got := e.filterIgnoredPaths(ctx, "broken", []string{p}); len(got) != 0 {
 		t.Fatalf("文件未变时应过滤掉，实际 %v", got)
 	}
 	// 文件变了：忽略失效，重新参与检测
@@ -108,7 +108,7 @@ func TestIgnoreHealthFiles(t *testing.T) {
 	if err := os.Chtimes(p, later, later); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.filterIgnoredPaths(ctx, []string{p}); len(got) != 1 {
+	if got := e.filterIgnoredPaths(ctx, "broken", []string{p}); len(got) != 1 {
 		t.Fatalf("文件变了应重新参与检测，实际 %v", got)
 	}
 	// 取消忽略
@@ -148,5 +148,30 @@ func TestRenameAllHealth(t *testing.T) {
 	}
 	if _, err := os.Lstat(unknown); err != nil {
 		t.Fatalf("unknown 条目不应被处理：%v", err)
+	}
+}
+
+// TestIgnoreKindIsolation 回归审查 M1：忽略「损坏」不得连带隐藏同一文件的「扩展名」结论。
+func TestIgnoreKindIsolation(t *testing.T) {
+	root := t.TempDir()
+	useScanRoot(t, root)
+	e, st := newHealthTestEngine(t)
+	ctx := context.Background()
+	p := filepath.Join(root, "x.mp4")
+	if err := os.WriteFile(p, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AppendHealthResults(ctx, "broken", []store.HealthResult{{Path: p, Reason: "invalid_data", Size: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	if res := e.IgnoreHealthFiles(ctx, "broken", []string{p}); res.Done != 1 {
+		t.Fatalf("标记失败：%+v", res)
+	}
+	// 同一文件在「扩展名」类型里仍应参与检测
+	if got := e.filterIgnoredPaths(ctx, "ext", []string{p}); len(got) != 1 {
+		t.Fatalf("忽略 broken 不应过滤 ext，实际 %v", got)
+	}
+	if got := e.filterIgnoredPaths(ctx, "broken", []string{p}); len(got) != 0 {
+		t.Fatalf("broken 应被过滤，实际 %v", got)
 	}
 }

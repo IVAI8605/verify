@@ -519,7 +519,7 @@ func (s *Store) AddHealthIgnore(ctx context.Context, it HealthIgnore) error {
 		it.CreatedAt = time.Now().Unix()
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO health_ignored(path,kind,size,mtime,reason,created_at)
-		VALUES(?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET
+		VALUES(?,?,?,?,?,?) ON CONFLICT(path,kind) DO UPDATE SET
 		kind=excluded.kind, size=excluded.size, mtime=excluded.mtime,
 		reason=excluded.reason, created_at=excluded.created_at`,
 		it.Path, it.Kind, it.Size, it.Mtime, it.Reason, it.CreatedAt)
@@ -543,7 +543,8 @@ func (s *Store) RemoveHealthIgnore(ctx context.Context, paths []string) (int64, 
 	return total, nil
 }
 
-// HealthIgnoreMap 返回忽略表（path → 记录），供检测时按 size+mtime 判断是否仍有效。
+// HealthIgnoreMap 返回忽略表（kind+"\x00"+path → 记录），供检测时按 size+mtime 判断是否仍有效。
+// v4.2.1：键带上 kind，忽略「损坏」不再连带隐藏同一文件的扩展名/文件名结论。
 func (s *Store) HealthIgnoreMap(ctx context.Context) (map[string]HealthIgnore, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT path,kind,size,mtime,reason,created_at FROM health_ignored`)
 	if err != nil {
@@ -556,7 +557,7 @@ func (s *Store) HealthIgnoreMap(ctx context.Context) (map[string]HealthIgnore, e
 		if err := rows.Scan(&it.Path, &it.Kind, &it.Size, &it.Mtime, &it.Reason, &it.CreatedAt); err != nil {
 			return nil, err
 		}
-		out[it.Path] = it
+		out[it.Kind+"\x00"+it.Path] = it
 	}
 	return out, rows.Err()
 }

@@ -304,6 +304,13 @@ func CheckExt(fileName string, head []byte, unify string) (ExtFinding, bool) {
 	if raw != "" && raw != cur {
 		f.Reasons = append(f.Reasons, ReasonUpperExt)
 	}
+	// v4.2.1（审查修复）：整个文件名没有扩展名、末尾却粘连了已知扩展名
+	// （VID_..._545mp4）时，这属于「文件名缺点号」，必须交给文件名检测去补点。
+	// 早期这里会按「内容 mp4 vs 空扩展名」判 mismatch，并建议改成 ...545mp4.mp4，
+	// 双扩展名、点还没补上——两套检测互相打架。
+	if cur == "" && gluedExt(fileName) != "" {
+		return f, len(f.Reasons) > 0
+	}
 
 	mt := Sniff(head)
 	if mt.Name == "" {

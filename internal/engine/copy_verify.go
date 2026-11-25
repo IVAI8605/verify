@@ -84,13 +84,21 @@ func copyFileVerified(src, dst string, removeSrc bool) error {
 	hasher := blake3.New(32, nil)
 	buf := make([]byte, copyBufSize)
 	n, copyErr := io.CopyBuffer(io.MultiWriter(out, hasher), in, buf)
-	closeErr := out.Close()
 	cleanup := func() { _ = os.Remove(dst) }
 	if copyErr != nil {
+		_ = out.Close()
 		cleanup()
 		return fmt.Errorf("复制到目标卷失败：%w", copyErr)
 	}
-	if closeErr != nil {
+	// v4.2.1（审查修复 H2）：删源前必须把目标数据真正落盘。
+	// 下面 hashx.FullHash 读回的是页缓存，校验通过≠已写盘；断电时会出现
+	// 「源已 unlink、目标半截/为空」——正是本次要根治的那类事故。
+	if err := out.Sync(); err != nil {
+		_ = out.Close()
+		cleanup()
+		return fmt.Errorf("同步目标文件到磁盘失败：%w", err)
+	}
+	if closeErr := out.Close(); closeErr != nil {
 		cleanup()
 		return fmt.Errorf("写入目标文件失败：%w", closeErr)
 	}
@@ -111,6 +119,13 @@ func copyFileVerified(src, dst string, removeSrc bool) error {
 	if err := os.Chmod(dst, sfi.Mode().Perm()); err != nil {
 		applog.Warn("跨卷复制后设置权限失败（%s）：%v", dst, err)
 	}
+	// v4.2.1（审查修复 H3）：尽力还原属主/属组。内容校验一致不代表元数据一致，
+	// 多用户 NAS 上属主变成运行进程（通常 root）会破坏共享访问。非 root 时失败只记日志。
+	if uid, gid, ok := ownerOf(sfi); ok {
+		if err := os.Lchown(dst, uid, gid); err != nil {
+			applog.Warn("跨卷复制后还原属主失败（%s）：%v", dst, err)
+		}
+	}
 	// 保真修改时间：跨卷后探测缓存、文件查重都按 mtime 判断「文件是否变过」，
 	// 不改回来会让刚搬过去的文件全部被当成新文件重算一遍。
 	if err := os.Chtimes(dst, time.Now(), sfi.ModTime()); err != nil {
@@ -119,6 +134,8 @@ func copyFileVerified(src, dst string, removeSrc bool) error {
 	if !removeSrc {
 		return nil
 	}
+	// 目录项（文件名）也要落盘，否则崩溃后目标路径可能不存在而源已删。
+	syncDir(filepath.Dir(dst))
 	if err := os.Remove(src); err != nil {
 		// 目标已经是完整副本，删源失败不算数据丢失，但必须报出来让用户知道有两个副本。
 		return fmt.Errorf("复制校验已完成，但删除源文件失败（源仍在 %s）：%w", src, err)
@@ -139,6 +156,31 @@ func copyTreeVerified(src, dst string) error {
 	if !sfi.IsDir() {
 		return errors.New("源不是目录")
 	}
+	// v4.2.1（审查修复 H1）：根目标必须用 Mkdir 原子占位，已存在就失败。
+	// 旧实现 walk 里 MkdirAll 对已存在的目标目录返回成功，随后任一步失败就
+	// RemoveAll(dst)，会把「不是本次创建、里面可能有用户文件」的目标目录整个删掉。
+	// 跨设备下 renameat2(RENAME_NOREPLACE) 返回 EXDEV 而非 EEXIST（实测），
+	// 所以预检与这里之间被外部建出同名目录时，只有这一步能挡住。
+	if err := os.Mkdir(dst, sfi.Mode().Perm()|0o700); err != nil {
+		if os.IsExist(err) {
+			return errors.New("目标位置已存在同名目录（拒绝覆盖）")
+		}
+		return fmt.Errorf("创建目标目录失败：%w", err)
+	}
+	// 只在「根目录由本次创建」的前提下，失败时才允许整体清理。
+	createdRoot := true
+	cleanup := func() {
+		if createdRoot {
+			_ = os.RemoveAll(dst)
+		}
+	}
+	// 先按整棵树的逻辑大小做一次总量检查，避免复制到一半才 ENOSPC 白跑。
+	if total, terr := treeLogicalSize(src); terr == nil {
+		if err := ensureFreeSpace(filepath.Dir(dst), total); err != nil {
+			cleanup()
+			return err
+		}
+	}
 	walkErr := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -149,11 +191,22 @@ func copyTreeVerified(src, dst string) error {
 		}
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
+			if rel == "." {
+				return nil // 根目录已由 os.Mkdir 建好
+			}
 			fi, serr := os.Stat(p)
 			if serr != nil {
 				return serr
 			}
-			return os.MkdirAll(target, fi.Mode().Perm()|0o700)
+			if err := os.Mkdir(target, fi.Mode().Perm()|0o700); err != nil {
+				return fmt.Errorf("创建子目录失败（%s）：%w", target, err)
+			}
+			if uid, gid, ok := ownerOf(fi); ok {
+				if err := os.Lchown(target, uid, gid); err != nil {
+					applog.Warn("跨卷复制后还原目录属主失败（%s）：%v", target, err)
+				}
+			}
+			return nil
 		}
 		if !d.Type().IsRegular() {
 			return fmt.Errorf("包含非普通文件（%s），跨卷移动暂不支持", p)
@@ -161,13 +214,40 @@ func copyTreeVerified(src, dst string) error {
 		return copyFileVerified(p, target, false)
 	})
 	if walkErr != nil {
-		_ = os.RemoveAll(dst)
+		cleanup()
 		return walkErr
 	}
 	if err := os.RemoveAll(src); err != nil {
 		return fmt.Errorf("复制校验已完成，但删除源目录失败（源仍在 %s）：%w", src, err)
 	}
 	return nil
+}
+
+// treeLogicalSize 汇总目录树的逻辑大小（用于复制前总量空间检查）。
+func treeLogicalSize(root string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type().IsRegular() {
+			fi, e := d.Info()
+			if e != nil {
+				return e
+			}
+			total += fi.Size()
+		}
+		return nil
+	})
+	return total, err
+}
+
+// ownerOf 取文件的 uid/gid；拿不到时返回 ok=false，不猜。
+func ownerOf(fi os.FileInfo) (uid, gid int, ok bool) {
+	if st, sok := fi.Sys().(*syscall.Stat_t); sok {
+		return int(st.Uid), int(st.Gid), true
+	}
+	return 0, 0, false
 }
 
 // ensureFreeSpace 在复制前粗查目标卷剩余空间，避免复制到一半把盘写满。

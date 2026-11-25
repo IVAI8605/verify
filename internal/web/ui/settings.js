@@ -1158,11 +1158,19 @@ async function loadHealth(){
     // v4.2.0：本次打开健康页先做一次「磁盘存在性复核」，清掉文件已被移走/删除的幽灵结论。
     // 只删派生的健康结论、不动磁盘文件；失败不影响正常加载。
     if (!h.pruned) {
+      // v4.2.1：复核放后台跑，不阻塞列表加载；成功后才置 pruned（失败下次进入重试）。
       h.pruned = true;
-      try {
-        const pr = await postJSON('/api/health/prune', { kind: h.kind });
-        if (pr && pr.removed > 0) toast('已清理 ' + pr.removed + ' 条失效记录（文件已不在原位置）', 'ok', 4200);
-      } catch(e) { /* 复核失败不阻断列表加载 */ }
+      (async () => {
+        try {
+          const pr = await postJSON('/api/health/prune', { kind: h.kind });
+          if (pr && pr.removed > 0) {
+            toast('已清理 ' + pr.removed + ' 条失效记录（文件已不在原位置）', 'ok', 4200);
+            if (S.tab === 'health' && healthState().kind === h.kind) await loadHealth();
+          }
+        } catch(e) {
+          h.pruned = false; // 复核失败（如检测进行中）允许下次重试
+        }
+      })();
     }
     // 损坏页加载已标为误报的清单，供「误报标记」按钮显示与恢复。
     if (h.kind === 'broken') {
@@ -1534,7 +1542,7 @@ function renderHealth(){
       ${h.kind === 'traditional' ? `<button class="btn" id="healthToSimp" data-act="health-to-simp" data-sel-needs${selCount && !busy ? '' : ' disabled'} title="把勾选的繁体文件名转成简体，改完可以用「撤销上次操作」还原">转简体</button>` : ''}
       ${h.kind !== 'traditional' ? `<button class="btn danger" id="healthTrashSel" data-act="health-trash-sel" data-sel-needs${selCount && !busy ? '' : ' disabled'}>移入隔离区</button>` : ''}
       ${h.kind === 'traditional' ? `<button class="btn danger" id="healthTrashSel" data-act="health-trash-sel" data-sel-needs${selCount && !busy ? '' : ' disabled'}>移入隔离区</button>` : ''}
-      ${canRename && actionableAll.length ? `<button class="btn ghost" data-act="health-fix-all"${busy ? ' disabled' : ''} title="把当前类全部可修正条目按建议一次改好（跳过无法确定的提示项）">按建议修正整类（${actionableAll.length}）</button>` : ''}
+      ${canRename && (h.reasonFilter || (h.kind === 'ext' && h.upperOnly) ? actionableView.length : actionableAll.length) ? `<button class="btn ghost" data-act="health-fix-all"${busy ? ' disabled' : ''} title="把当前类全部可修正条目按建议一次改好（跳过无法确定的提示项）">按建议修正整类（${(h.reasonFilter || (h.kind === 'ext' && h.upperOnly)) ? actionableView.length : actionableAll.length}）</button>` : ''}
       ${h.kind === 'broken' ? `<button class="btn ghost" data-act="health-ignore-sel" data-sel-needs${selCount && !busy ? '' : ' disabled'} title="把选中的误报文件记为忽略，以后不再上报（不删除文件）">标为误报</button>` : ''}
       ${h.kind === 'broken' ? `<button class="btn ghost" data-act="health-ignore-open" title="查看/恢复已标为误报的文件">误报标记（${(h.ignore || []).length}）</button>` : ''}
       ${h.kind !== 'empty_dir' ? `<button class="btn ghost" data-act="health-move-sel" data-sel-needs${selCount && !busy ? '' : ' disabled'} title="把选中的文件移动到指定目录（跨卷会自动复制+校验后删源）">移入指定目录…</button>` : ''}
@@ -2034,6 +2042,7 @@ function healthMoveSel(){
 }
 
 async function healthMoveExecute(target, paths){
+  // 只弹出预检/确认弹窗；移动完成后的刷新在 moveConfirm 收尾（v4.2.1：
+  // 旧实现确认前就 loadHealth，会把选择集清掉并多刷一次）。
   await moveExecute(target, paths);
-  await loadHealth();
 }

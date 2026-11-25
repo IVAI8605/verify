@@ -128,3 +128,33 @@ func TestMoveFileAcrossSameVolume(t *testing.T) {
 		t.Fatalf("目标应存在：%v", err)
 	}
 }
+
+// TestCopyTreeVerifiedRefusesExistingTarget 回归审查 H1：
+// 目标目录已存在时必须拒绝，且绝不能删除目标目录里已有的用户文件。
+func TestCopyTreeVerifiedRefusesExistingTarget(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	if err := os.MkdirAll(src, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "dst")
+	if err := os.MkdirAll(dst, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(dst, "keep.txt")
+	if err := os.WriteFile(keep, []byte("user data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyTreeVerified(src, dst); err == nil {
+		t.Fatalf("目标已存在时应拒绝")
+	}
+	if data, err := os.ReadFile(keep); err != nil || string(data) != "user data" {
+		t.Fatalf("目标目录里的用户文件被破坏：%q err=%v", data, err)
+	}
+	if _, err := os.Lstat(filepath.Join(src, "a.txt")); err != nil {
+		t.Fatalf("失败时源文件必须保留：%v", err)
+	}
+}

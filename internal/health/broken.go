@@ -148,7 +148,7 @@ func confirmByLenientDecode(ctx context.Context, ffmpeg, path string, strict *Br
 		return nil
 	}
 	switch strict.Reason {
-	case ReasonInvalidData, ReasonDecodeFailed, ReasonTruncated:
+	case ReasonInvalidData, ReasonDecodeFailed:
 	default:
 		return strict
 	}
@@ -161,7 +161,7 @@ func confirmByLenientDecode(ctx context.Context, ffmpeg, path string, strict *Br
 	return strict
 }
 
-// lenientDecodeOnce 用容错参数解 3 秒，返回 true 表示这段能跑完。
+// lenientDecodeOnce 用容错参数解 3 秒，返回 true 表示这段**确实解出了帧**。
 //
 // 参数说明：
 //   - `-err_detect ignore_err`：把解码错误降级为可忽略，播放器同款行为；
@@ -170,6 +170,10 @@ func confirmByLenientDecode(ctx context.Context, ffmpeg, path string, strict *Br
 //
 // 3 秒而不是 1 秒：坏帧往往集中在某一段，多解一点能覆盖更多实际情况；
 // 超时仍按 ProbeTimeout，不额外放宽。
+//
+// v4.2.1（审查修复）：只看退出码不够——`ignore_err + discardcorrupt` 下
+// 整段全是坏包时 ffmpeg 也可能以 0 退出。必须拿到「确实解出了帧」的证据，
+// 否则会把真损坏判成可播放。用 `-progress pipe:1` 读 out_time/frame。
 func lenientDecodeOnce(ctx context.Context, ffmpeg, path string, run CmdRunner, timeout time.Duration) bool {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -177,13 +181,40 @@ func lenientDecodeOnce(ctx context.Context, ffmpeg, path string, run CmdRunner, 
 		"-v", "error", "-nostdin",
 		"-err_detect", "ignore_err",
 		"-fflags", "+discardcorrupt",
+		"-progress", "pipe:1",
 		"-i", path, "-t", "3", "-f", "null", "-",
 	}
-	_, _, err := run(cctx, ffmpeg, args...)
-	if err != nil {
+	stdout, _, err := run(cctx, ffmpeg, args...)
+	if err != nil || cctx.Err() != nil {
 		return false
 	}
-	return cctx.Err() == nil
+	return progressDecodedFrames(stdout)
+}
+
+// progressDecodedFrames 判断 ffmpeg -progress 输出里是否有「真的解出内容」的迹象：
+// frame>0，或 out_time_us/out_time_ms>0，或 out_time 非 00:00:00。
+func progressDecodedFrames(out string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		key, val, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "frame":
+			if n, err := strconv.ParseInt(val, 10, 64); err == nil && n > 0 {
+				return true
+			}
+		case "out_time_us", "out_time_ms":
+			if n, err := strconv.ParseInt(val, 10, 64); err == nil && n > 0 {
+				return true
+			}
+		case "out_time":
+			if val != "" && !strings.HasPrefix(val, "00:00:00") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // decodeOnce 解码指定起点后 1 秒；返回 nil 表示这一段能正常解出。

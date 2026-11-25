@@ -124,6 +124,7 @@ func TestWritePathPrefixes(t *testing.T) {
 		"/api/transcode", "/api/transcode/cancel", "/api/fanjian", "/api/fanjian/undo",
 		"/api/folder_rename", "/api/folder_rename/undo",
 		"/api/health/rename", "/api/health/fix-encoding", "/api/health/trash", "/api/health/undo",
+		"/api/health/prune", "/api/health/ignore",
 		"/api/emptydir/clean", "/api/fs/mkdir", "/api/cleanup/run",
 	}
 	for _, p := range writeRoutes {

@@ -54,8 +54,10 @@ func (e *Engine) moveCheck(src, targetDir string) string {
 	if err != nil || !fi.Mode().IsRegular() {
 		return "源文件不存在或不是普通文件"
 	}
-	if e.VolumeOf(src) == "" {
-		return "源文件不在受管卷内"
+	// v4.2.1（审查修复 L1）：改用三步防线（Clean+软链接解析+卷前缀重判），
+	// 不能只做字符串前缀——中间目录是软链接时可能指到别的卷，跨卷放开后会被真的搬走。
+	if !e.ValidPath(src) {
+		return "源文件不在允许的扫描范围内"
 	}
 	// v4.2.0：跨卷不再拒绝，执行时降级为「复制+校验+删源」（见 copy_verify.go）。
 	// 保护目录内禁止移出（决策 6）

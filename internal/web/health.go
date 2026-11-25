@@ -5,6 +5,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"verify/internal/engine"
 	"verify/internal/health"
@@ -254,12 +255,17 @@ func (s *Server) handleHealthTrash(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, errorResponse{Error: "健康检测进行中，请等检测结束再操作"})
 		return
 	}
-	var body healthPathsRequest
+	// v4.2.1（审查修复）：移入隔离区不支持「整类」语义，用独立请求结构。
+	// 旧实现复用了带 all 字段的 healthPathsRequest，`{"all":true}` 空 paths 会
+	// 通过校验进引擎空循环，返回 200 done=0 的假成功。
+	var body struct {
+		Paths []string `json:"paths"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求体解析失败"})
 		return
 	}
-	if !body.All && len(body.Paths) == 0 {
+	if len(body.Paths) == 0 {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未选择文件"})
 		return
 	}
@@ -316,7 +322,11 @@ func (s *Server) handleHealthPrune(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.e.PruneMissingHealth(r.Context(), body.Kind)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
+		if errors.Is(err, engine.ErrHealthPruneBusy) {
+			writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "复核健康结论失败：" + err.Error()})
 		return
 	}
 	writeJSON(w, 200, toHealthPruneResp(res))
@@ -338,8 +348,17 @@ func (s *Server) handleHealthIgnore(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求体解析失败"})
 			return
 		}
+		if !health.Kind(body.Kind).Valid() {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未知的检测类型"})
+			return
+		}
 		if len(body.Paths) == 0 {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未选择文件"})
+			return
+		}
+		// 检测进行中标忽略，当轮落库会把结论又写回来；与其它健康写接口一致直接拒绝。
+		if s.e.HealthRunning() {
+			writeJSON(w, http.StatusConflict, errorResponse{Error: "健康检测进行中，请等检测结束再操作"})
 			return
 		}
 		writeJSON(w, 200, toHealthOpResultResp(s.e.IgnoreHealthFiles(r.Context(), body.Kind, body.Paths)))

@@ -503,3 +503,19 @@ func TestBuildExtTarget(t *testing.T) {
 		t.Fatalf("空结论不应给出目标名")
 	}
 }
+
+// TestCheckExtDotlessGluedNotMismatch 覆盖 v4.2.1 审查修复：
+// 无扩展名且末尾粘连已知扩展名的文件，扩展名检测不得报 mismatch（否则会改成双扩展名），
+// 交给文件名检测的 missing_dot 规则补点。
+func TestCheckExtDotlessGluedNotMismatch(t *testing.T) {
+	mp4Head := append([]byte{0, 0, 0, 0x20}, []byte("ftypisom")...)
+	f, bad := CheckExt("VID_20240115_150825_676_545mp4", mp4Head, "off")
+	if bad {
+		t.Fatalf("缺点号文件不应由扩展名检测报问题，实际 reasons=%v fix=%q", f.Reasons, f.FixName)
+	}
+	// 文件名检测负责给出正确目标
+	nf, nbad := CheckName("VID_20240115_150825_676_545mp4", NameOptions{})
+	if !nbad || nf.Suggested != "VID_20240115_150825_676_545.mp4" {
+		t.Fatalf("文件名检测应补点，实际 bad=%v suggest=%q", nbad, nf.Suggested)
+	}
+}

@@ -209,6 +209,13 @@ func TestProbeVideoRetriesOnceAfterTimeout(t *testing.T) {
 }
 
 // TestReasonLabel 验证所有原因都有中文说明，避免界面露出机器标识。
+// TestReasonLabelMissingDot 回归审查 R7：新增原因必须同时补中文说明。
+func TestReasonLabelMissingDot(t *testing.T) {
+	if ReasonLabel(ReasonMissingDot) == ReasonMissingDot {
+		t.Fatalf("missing_dot 应有中文说明，实际返回原 key")
+	}
+}
+
 func TestReasonLabel(t *testing.T) {
 	reasons := []string{
 		ReasonTimeout, ReasonNoMoov, ReasonInvalidData, ReasonNoDecoder, ReasonNoCodecParams,
@@ -235,7 +242,7 @@ func (l *lenientRunner) run(_ context.Context, _ string, args ...string) (string
 	for _, a := range args {
 		if a == "-err_detect" {
 			l.lenientCalls++
-			return "", "", nil
+			return "frame=12\nout_time_us=400000\n", "", nil
 		}
 	}
 	l.strictCalls++
@@ -262,7 +269,7 @@ func TestProbeVideoLenientNotForStructural(t *testing.T) {
 		for _, a := range args {
 			if a == "-err_detect" {
 				r.lenientCalls++
-				return "", "", nil
+				return "frame=12\nout_time_us=400000\n", "", nil
 			}
 		}
 		return "", "moov atom not found", errors.New("exit 1")
@@ -282,5 +289,21 @@ func TestProbeVideoLenientFailsKeepsStrict(t *testing.T) {
 	})
 	if got == nil || got.Reason != ReasonInvalidData {
 		t.Fatalf("两次都失败应保留数据无效结论，实际 %+v", got)
+	}
+}
+
+// TestProbeVideoLenientZeroFramesKeepsStrict 回归审查：容错解码退出 0 但零帧，
+// 说明整段全是坏包，必须保留损坏结论，不能误判成可播放。
+func TestProbeVideoLenientZeroFramesKeepsStrict(t *testing.T) {
+	got := ProbeVideo(context.Background(), "ffmpeg", "", "/v/a.mp4", func(_ context.Context, _ string, args ...string) (string, string, error) {
+		for _, a := range args {
+			if a == "-err_detect" {
+				return "frame=0\nout_time_us=0\n", "", nil
+			}
+		}
+		return "", "Invalid data found when processing input", errors.New("exit 1")
+	})
+	if got == nil || got.Reason != ReasonInvalidData {
+		t.Fatalf("零帧的容错解码不应判可播放，实际 %+v", got)
 	}
 }

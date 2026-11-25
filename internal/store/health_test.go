@@ -588,3 +588,31 @@ func TestNewAuditTaskIDConcurrentUnique(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+// TestDeleteHealthByIDsChunked 覆盖空集合与大集合分片删除（>400 触发分片）。
+func TestDeleteHealthByIDsChunked(t *testing.T) {
+	ctx := context.Background()
+	st := openHealthStore(t)
+	if n, err := st.DeleteHealthByIDs(ctx, nil); err != nil || n != 0 {
+		t.Fatalf("空集合应返回 0：n=%d err=%v", n, err)
+	}
+	items := make([]HealthResult, 0, 450)
+	for i := 0; i < 450; i++ {
+		items = append(items, HealthResult{Path: fmt.Sprintf("/v/%03d.mp4", i), Reason: "invalid_data", Size: 1})
+	}
+	if err := st.AppendHealthResults(ctx, "broken", items); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.AllHealthRows(ctx, "broken")
+	if err != nil || len(rows) != 450 {
+		t.Fatalf("应有 450 行，实际 %d err=%v", len(rows), err)
+	}
+	ids := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	n, err := st.DeleteHealthByIDs(ctx, ids)
+	if err != nil || n != 450 {
+		t.Fatalf("应删除 450 行，实际 %d err=%v", n, err)
+	}
+}

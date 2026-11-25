@@ -82,10 +82,6 @@ func (e *Engine) runHealthAll(ctx context.Context, taskID int64, opt HealthOptio
 	startedAt := time.Now().Unix()
 
 	grouped, walkErr := e.collectHealthCandidateGroups(ctx, roots, health.KindAll)
-	// v4.2.0：用户标为误报且文件未变的路径不再上报。
-	for gi := range grouped {
-		grouped[gi] = e.filterIgnoredPaths(ctx, grouped[gi])
-	}
 	var files []string
 	for _, g := range grouped {
 		files = append(files, g...)
@@ -128,6 +124,10 @@ func (e *Engine) runHealthAll(ctx context.Context, taskID int64, opt HealthOptio
 
 	total := int64(len(files) + len(dirs))
 	e.setHealthTotal(taskID, total)
+
+	// v4.2.1：忽略记录按 kind+size+mtime 过滤（在 checkOneAll 里逐条结果判定，
+	// 因为同一次全量扫描会为同一文件产出多个类型的结论）。
+	ignoreMap, _ := e.st.HealthIgnoreMap(context.Background())
 
 	// ffmpeg 不可用时只跳过损坏检测，其它六类照常跑
 	var probeCache map[string]store.ProbeEntry
@@ -206,7 +206,7 @@ func (e *Engine) runHealthAll(ctx context.Context, taskID int64, opt HealthOptio
 			if ctx.Err() != nil {
 				return
 			}
-			res, entry, err := e.checkOneAll(ctx, path, opt, probeCache)
+			res, entry, err := e.checkOneAll(ctx, path, opt, probeCache, ignoreMap)
 			if err != nil {
 				atomic.AddInt64(&detectErr, 1)
 			}
@@ -274,7 +274,7 @@ func (e *Engine) runHealthAll(ctx context.Context, taskID int64, opt HealthOptio
 }
 
 // checkOneAll 对单个文件依次执行各类判定，一个文件可同时命中多类。
-func (e *Engine) checkOneAll(ctx context.Context, path string, opt HealthOptions, cache map[string]store.ProbeEntry) ([]store.HealthResult, *store.ProbeEntry, error) {
+func (e *Engine) checkOneAll(ctx context.Context, path string, opt HealthOptions, cache map[string]store.ProbeEntry, ignoreMap map[string]store.HealthIgnore) ([]store.HealthResult, *store.ProbeEntry, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, nil, err
@@ -282,6 +282,20 @@ func (e *Engine) checkOneAll(ctx context.Context, path string, opt HealthOptions
 	base := filepath.Base(path)
 	cfg := e.cfg.Get()
 	var out []store.HealthResult
+	// v4.2.1：结果按 kind+size+mtime 过忽略表（同一文件可能同时有多类结论）。
+	keep := func(rows []store.HealthResult) []store.HealthResult {
+		if len(ignoreMap) == 0 || len(rows) == 0 {
+			return rows
+		}
+		kept := rows[:0]
+		for _, r := range rows {
+			if ignoredNow(ignoreMap, r.Kind, path, info.Size(), info.ModTime().Unix()) {
+				continue
+			}
+			kept = append(kept, r)
+		}
+		return kept
+	}
 
 	// 空文件
 	if f, ok := health.CheckEmpty(path, info.Size(), opt.ContentMode); ok {
@@ -340,19 +354,19 @@ func (e *Engine) checkOneAll(ctx context.Context, path string, opt HealthOptions
 		// v3.12.0：与视频/片头/裁剪/转码互斥。只有可能调 ffmpeg 的媒体文件才进互斥位，
 		// 否则整轮扫描会被一个纯文本文件卡在入口。
 		if !e.acquireHealthProbe(ctx) {
-			return out, nil, ctx.Err()
+			return keep(out), nil, ctx.Err()
 		}
 		res, entry, err := e.probeBrokenHealth(ctx, path, base, info.Size(), info.ModTime().UnixNano(), cache)
 		e.releaseHealthProbe()
 		if err != nil {
-			return out, entry, err
+			return keep(out), entry, err
 		}
 		if res != nil {
 			out = append(out, *res)
 		}
 		if entry != nil {
-			return out, entry, nil
+			return keep(out), entry, nil
 		}
 	}
-	return out, nil, nil
+	return keep(out), nil, nil
 }

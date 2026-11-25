@@ -11,7 +11,11 @@ import (
 
 	"verify/internal/applog"
 	"verify/internal/health"
+	"verify/internal/taskguard"
 )
+
+// ErrHealthPruneBusy 表示健康检测进行中，复核被拒绝（web 层据此回 409）。
+var ErrHealthPruneBusy = errors.New("健康检测进行中，请等检测结束再复核")
 
 // HealthPruneResult 是一次「健康结论幽灵行复核」的结果（v4.2.0，2026-11-25 建议 5）。
 //
@@ -33,8 +37,14 @@ type HealthPruneResult struct {
 func (e *Engine) PruneMissingHealth(ctx context.Context, kind string) (HealthPruneResult, error) {
 	var res HealthPruneResult
 	if e.HealthRunning() {
-		return res, errors.New("健康检测进行中，请等检测结束再复核")
+		return res, ErrHealthPruneBusy
 	}
+	// v4.2.1（审查修复）：复核是逐行 Lstat 的长任务，登记闸门，与扫描/检测互斥。
+	rel, gerr := e.acquireTask(taskguard.KindHealth, "健康结论复核", taskguard.GroupIO)
+	if gerr != nil {
+		return res, gerr
+	}
+	defer rel("done")
 	unlock := e.lockWrites()
 	defer unlock()
 
@@ -61,6 +71,10 @@ func (e *Engine) PruneMissingHealth(ctx context.Context, kind string) (HealthPru
 		res.Checked += len(rows)
 		var gone []int64
 		for _, r := range rows {
+			// 客户端已取消时尽快退出，不把全表 Lstat 跑到底。
+			if ctx.Err() != nil {
+				return res, ctx.Err()
+			}
 			vol := volumeOf(r.Path, vols)
 			if vol == "" {
 				res.Skipped++
@@ -97,6 +111,21 @@ func (e *Engine) PruneMissingHealth(ctx context.Context, kind string) (HealthPru
 				return res, derr
 			}
 			res.Removed += int(n)
+		}
+	}
+	// v4.2.1：忽略记录背后的文件被删掉后也不该一直挂着，顺手清掉（只删忽略行）。
+	if ignores, ierr := e.st.ListHealthIgnore(ctx); ierr == nil && len(ignores) > 0 {
+		var stalePaths []string
+		for _, it := range ignores {
+			if ctx.Err() != nil {
+				break
+			}
+			if _, serr := os.Lstat(it.Path); errors.Is(serr, fs.ErrNotExist) {
+				stalePaths = append(stalePaths, it.Path)
+			}
+		}
+		if len(stalePaths) > 0 {
+			_, _ = e.st.RemoveHealthIgnore(ctx, stalePaths)
 		}
 	}
 	for vol, st := range states {

@@ -217,7 +217,7 @@ async function switchTab(name){
   if (name === 'rename') { loadRenamePresets(); renderRenamePage(); return; }
   if (name === 'settings') { await refreshStatus(); renderSettings(); return; }
   if (name === 'oplog') { await loadOpLog(); return; }
-  if (name === 'health') { await loadHealth(); return; }
+  if (name === 'health') { healthState().pruned = false; await loadHealth(); return; }
   if (name === 'video') { await loadVideo(); return; }
   if (name === 'intro') { await loadIntro(); return; }
   if (name === 'photo') { await loadPhoto(); return; }

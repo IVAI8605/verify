@@ -152,12 +152,13 @@ CREATE TABLE IF NOT EXISTS health_results (
 -- 记录 size+mtime：文件被换掉后忽略自动失效，别人改过的文件不会一直被藏起来。
 -- 只是「不再上报」，不删除任何磁盘文件，也不影响其它检测类型。
 CREATE TABLE IF NOT EXISTS health_ignored (
-  path       TEXT PRIMARY KEY,
+  path       TEXT NOT NULL,
   kind       TEXT NOT NULL DEFAULT '',
   size       INTEGER NOT NULL DEFAULT 0,
   mtime      INTEGER NOT NULL DEFAULT 0,
   reason     TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL DEFAULT 0
+  created_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(path, kind)
 );
 CREATE INDEX IF NOT EXISTS idx_health_kind ON health_results(kind);
 -- v3.10.11（第七轮 P2-2）：健康页固定按 size DESC, path 分页，
@@ -651,6 +652,38 @@ func migrate(ctx context.Context, db *sql.DB) error {
 				continue
 			}
 			return err
+		}
+	}
+	// v4.2.1：health_ignored 从「按 path 主键」升级为「(path,kind) 复合主键」。
+	// 4.2.0 是未对外发布的本地版，但开发库可能已建过旧表；按 sqlite_master 的建表 SQL 判定，
+	// 命中旧结构就重建并搬数据，避免「忽略一种问题把同文件其它类型结论一起藏掉」。
+	var ignoreSQL string
+	if err := db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='table' AND name='health_ignored'`).Scan(&ignoreSQL); err == nil && ignoreSQL != "" {
+		compact := strings.ReplaceAll(ignoreSQL, " ", "")
+		if !strings.Contains(compact, "PRIMARYKEY(path,kind)") {
+			tx, terr := db.BeginTx(ctx, nil)
+			if terr != nil {
+				return terr
+			}
+			stmts := []string{
+				`ALTER TABLE health_ignored RENAME TO health_ignored_old`,
+				`CREATE TABLE health_ignored (
+  path TEXT NOT NULL, kind TEXT NOT NULL DEFAULT '', size INTEGER NOT NULL DEFAULT 0,
+  mtime INTEGER NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(path, kind))`,
+				`INSERT OR REPLACE INTO health_ignored(path,kind,size,mtime,reason,created_at)
+  SELECT path,kind,size,mtime,reason,created_at FROM health_ignored_old`,
+				`DROP TABLE health_ignored_old`,
+			}
+			for _, q := range stmts {
+				if _, e := tx.ExecContext(ctx, q); e != nil {
+					_ = tx.Rollback()
+					return e
+				}
+			}
+			if e := tx.Commit(); e != nil {
+				return e
+			}
 		}
 	}
 	// v2.7.0：video_tags 增加取值来源与正则。新库由 schema 直接建好，旧库在这里补列；

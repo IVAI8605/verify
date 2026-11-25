@@ -60,21 +60,32 @@ func (e *Engine) UnignoreHealth(ctx context.Context, paths []string) (int64, err
 	return e.st.RemoveHealthIgnore(ctx, paths)
 }
 
-// filterIgnoredPaths 过滤掉「用户标为误报且文件内容未变」的候选路径。
+// ignoreKey 是忽略表的复合键（kind + 路径），与 store.HealthIgnoreMap 的键一致。
+func ignoreKey(kind, path string) string { return kind + "\x00" + path }
+
+// ignoredNow 判断某文件当前是否命中「该类型」的忽略记录且内容未变。
+// v4.2.1：必须带 kind——忽略「损坏」不能连带隐藏同一文件的扩展名/文件名结论。
+func ignoredNow(m map[string]store.HealthIgnore, kind, path string, size, mtime int64) bool {
+	it, ok := m[ignoreKey(kind, path)]
+	if !ok {
+		return false
+	}
+	return it.Size == size && it.Mtime == mtime
+}
+
+// filterIgnoredPaths 过滤掉「用户标为误报且文件内容未变」的候选路径（按类型）。
 //
 // 逐条 Lstat 只发生在命中忽略表的路径上：忽略表通常只有几条，绝大多数文件
 // 只查一次 map 就过，不会给扫描增加可见开销。
-func (e *Engine) filterIgnoredPaths(ctx context.Context, paths []string) []string {
+func (e *Engine) filterIgnoredPaths(ctx context.Context, kind string, paths []string) []string {
 	m, err := e.st.HealthIgnoreMap(ctx)
 	if err != nil || len(m) == 0 {
 		return paths
 	}
 	out := paths[:0]
 	for _, p := range paths {
-		if it, ok := m[p]; ok {
-			if fi, serr := os.Lstat(p); serr == nil && fi.Size() == it.Size && fi.ModTime().Unix() == it.Mtime {
-				continue
-			}
+		if fi, serr := os.Lstat(p); serr == nil && ignoredNow(m, kind, p, fi.Size(), fi.ModTime().Unix()) {
+			continue
 		}
 		out = append(out, p)
 	}
