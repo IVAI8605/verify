@@ -151,6 +151,8 @@ type moveFilesResultResp struct {
 	Done   []moveDoneResp    `json:"done"`
 	Failed []string          `json:"failed"`
 	Errors map[string]string `json:"errors"`
+	// CrossVol 是走跨卷复制+校验的条数（v4.2.0，omitempty 与 engine 侧一致）。
+	CrossVol int `json:"cross_vol,omitempty"`
 }
 
 // toMoveFilesResultResp 把 engine 结果转成契约 struct，nil 时返回带空切片的零值。
@@ -162,6 +164,7 @@ func toMoveFilesResultResp(src *engine.MoveResult) moveFilesResultResp {
 		return out
 	}
 	out.TaskID = src.TaskID
+	out.CrossVol = src.CrossVol
 	out.Done = make([]moveDoneResp, 0, len(src.Done))
 	for _, it := range src.Done {
 		out.Done = append(out.Done, moveDoneResp{From: it.From, To: it.To})

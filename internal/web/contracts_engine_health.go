@@ -287,3 +287,50 @@ func toIndexRepairResultResp(src engine.IndexRepairResult) indexRepairResultResp
 	}
 	return out
 }
+
+// healthPruneResp 是 /api/health/prune 的响应（对应 engine.HealthPruneResult，v4.2.0）。
+type healthPruneResp struct {
+	OK             bool             `json:"ok"`
+	Checked        int              `json:"checked"`
+	Removed        int              `json:"removed"`
+	Skipped        int              `json:"skipped"`
+	SkippedVolumes []volumeSkipResp `json:"skipped_volumes,omitempty"`
+}
+
+// toHealthPruneResp 把引擎结果转成契约 struct。
+func toHealthPruneResp(src engine.HealthPruneResult) healthPruneResp {
+	out := healthPruneResp{OK: true, Checked: src.Checked, Removed: src.Removed, Skipped: src.Skipped,
+		SkippedVolumes: []volumeSkipResp{}}
+	for _, it := range src.SkippedVolumes {
+		out.SkippedVolumes = append(out.SkippedVolumes, volumeSkipResp{Volume: it.Volume, Rows: it.Rows, Reason: it.Reason})
+	}
+	return out
+}
+
+// healthIgnoreItemResp 是一条误报忽略记录（对应 store.HealthIgnore，v4.2.0）。
+type healthIgnoreItemResp struct {
+	Path      string `json:"path"`
+	Kind      string `json:"kind"`
+	Size      int64  `json:"size"`
+	Mtime     int64  `json:"mtime"`
+	Reason    string `json:"reason"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+// healthIgnoreListResp 是 /api/health/ignore 的 GET 响应。
+type healthIgnoreListResp struct {
+	Total int                    `json:"total"`
+	Items []healthIgnoreItemResp `json:"items"`
+}
+
+// toHealthIgnoreListResp 转换忽略列表。
+func toHealthIgnoreListResp(src []store.HealthIgnore) healthIgnoreListResp {
+	out := healthIgnoreListResp{Items: make([]healthIgnoreItemResp, 0, len(src))}
+	out.Total = len(src)
+	for _, it := range src {
+		out.Items = append(out.Items, healthIgnoreItemResp{
+			Path: it.Path, Kind: it.Kind, Size: it.Size, Mtime: it.Mtime, Reason: it.Reason, CreatedAt: it.CreatedAt,
+		})
+	}
+	return out
+}

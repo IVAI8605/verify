@@ -132,6 +132,12 @@ type ExtFinding struct {
 	SuggestExt string
 	// Reasons 记录命中的原因，按优先级排列。
 	Reasons []string
+	// FixName 是完整的建议文件名（不含目录，v4.2.0）。
+	//
+	// 旧实现只给扩展名，多重扩展名（video.mp4.avi）改名时会算出
+	// video.mp4.mp4 —— 于是「识别得出但改不了」。这里在检测阶段就把
+	// 主干里残留的已知扩展名剥掉，直接给出可执行的目标名。
+	FixName string
 }
 
 // Known 表示文件内容是否落入已知类型表。
@@ -330,7 +336,56 @@ func CheckExt(fileName string, head []byte, unify string) (ExtFinding, bool) {
 		f.Reasons = append(f.Reasons, ReasonMultiExt)
 	}
 
+	if len(f.Reasons) > 0 {
+		f.FixName = fixName(fileName, f.SuggestExt, f.Reasons)
+	}
 	return f, len(f.Reasons) > 0
+}
+
+// fixName 生成完整的目标文件名（v4.2.0，2026-11-25 建议 2）。
+//
+// 规则：
+//   - 多重扩展名：从主干尾部逐层剥掉已知扩展名（.x264.aac.mp4 → .x264.mp4），
+//     再接真实类型的扩展名，改名后不再残留名不副实的后缀；
+//   - 其余情况（内容不符、大写、同族归一）：把最后一个扩展名换成建议值并转小写。
+//
+// 内容认不出来（RealType 为空）时返回空串：没有真实类型就没有目标名，
+// 调用方必须拒绝改名，不能猜一个。
+func fixName(original, suggest string, reasons []string) string {
+	if suggest == "" {
+		return ""
+	}
+	base := strings.TrimSuffix(original, filepath.Ext(original))
+	if containsReason(reasons, ReasonMultiExt) {
+		for {
+			inner := filepath.Ext(base)
+			if inner == "" {
+				break
+			}
+			if !isKnownExt(strings.ToLower(strings.TrimPrefix(inner, "."))) {
+				break
+			}
+			base = strings.TrimSuffix(base, inner)
+		}
+	}
+	if base == "" {
+		return ""
+	}
+	target := base + "." + strings.ToLower(suggest)
+	if target == original {
+		return ""
+	}
+	return target
+}
+
+// containsReason 判断原因列表里是否命中指定原因。
+func containsReason(reasons []string, want string) bool {
+	for _, r := range reasons {
+		if r == want {
+			return true
+		}
+	}
+	return false
 }
 
 func containsExt(exts []string, ext string) bool {

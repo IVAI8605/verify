@@ -44,7 +44,7 @@ import (
 //go:embed ui
 var uiFS embed.FS
 
-const Version = "4.1.5"
+const Version = "4.2.0"
 
 type Server struct {
 	e       *engine.Engine
@@ -273,6 +273,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/health/fix-encoding", s.auth(s.handleHealthFixEncoding))
 	mux.HandleFunc("/api/health/trash", s.auth(s.handleHealthTrash))
 	mux.HandleFunc("/api/health/undo", s.auth(s.handleHealthUndo))
+	mux.HandleFunc("/api/health/prune", s.auth(s.handleHealthPrune))
+	mux.HandleFunc("/api/health/ignore", s.auth(s.handleHealthIgnore))
 	// v3.10.12（P1-02）：索引体检，清理磁盘上已不存在的幽灵索引行。
 	mux.HandleFunc("/api/index/repair", s.auth(s.handleIndexRepair))
 	// v3.7.0：操作记录查询、导出与清理
@@ -521,6 +523,7 @@ var writePathPrefixes = []string{
 	"/api/groups/rename", "/api/file/rename", "/api/rename/execute", "/api/rename/undo", "/api/rename/plan",
 	"/api/move", "/api/move/dir", "/api/relink", "/api/trim", "/api/transcode", "/api/fanjian",
 	"/api/folder_rename", "/api/health/rename", "/api/health/fix-encoding", "/api/health/trash", "/api/health/undo",
+	"/api/health/prune", "/api/health/ignore",
 	"/api/emptydir/clean", "/api/fs/mkdir", "/api/cleanup/run",
 }
 

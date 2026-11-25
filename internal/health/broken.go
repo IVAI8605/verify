@@ -108,11 +108,11 @@ func probe(ctx context.Context, ffmpeg, ffprobe, path string, run CmdRunner, tim
 	}
 	// 没有 ffprobe 就无法复核，沿用严格的旧结论
 	if ffprobe == "" {
-		return first
+		return confirmByLenientDecode(ctx, ffmpeg, path, first, run, timeout)
 	}
 	info, ok := probeStreams(ctx, ffprobe, path, run, timeout)
 	if !ok || info.streams == 0 {
-		return first
+		return confirmByLenientDecode(ctx, ffmpeg, path, first, run, timeout)
 	}
 	// 有些流式封装没有时长：只要容器与编码参数都能解析，就按可播放处理
 	if info.duration <= 0 {
@@ -130,7 +130,60 @@ func probe(ctx context.Context, ffmpeg, ffprobe, path string, run CmdRunner, tim
 			return nil
 		}
 	}
-	return first
+	return confirmByLenientDecode(ctx, ffmpeg, path, first, run, timeout)
+}
+
+// confirmByLenientDecode 是 v4.2.0 新增的二次确认（2026-11-25 建议 4）。
+//
+// 背景：实战中 108 条被判损坏的文件里有 2 条实际能正常播放。严格解码
+// （`-v error` 默认 error 级即中止）遇到少量坏帧就整段失败，而播放器会跳过坏帧继续。
+// 这里再跑一次「容错解码」：打开解码器的 ignore_err 与丢包选项，
+// 只要这段能跑完（退出码 0）就说明文件可播放，不报损坏。
+//
+// 只对「数据无效 / 解码失败 / 截断」这三类可容忍原因做确认：
+// 缺少 moov 原子、无有效流、缺解码器是结构性或环境问题，宽松解码也救不回来，
+// 继续走严格结论（或直接不报），不做无意义的第二次 ffmpeg。
+func confirmByLenientDecode(ctx context.Context, ffmpeg, path string, strict *BrokenFinding, run CmdRunner, timeout time.Duration) *BrokenFinding {
+	if strict == nil {
+		return nil
+	}
+	switch strict.Reason {
+	case ReasonInvalidData, ReasonDecodeFailed, ReasonTruncated:
+	default:
+		return strict
+	}
+	if ctx.Err() != nil {
+		return strict
+	}
+	if lenientDecodeOnce(ctx, ffmpeg, path, run, timeout) {
+		return nil
+	}
+	return strict
+}
+
+// lenientDecodeOnce 用容错参数解 3 秒，返回 true 表示这段能跑完。
+//
+// 参数说明：
+//   - `-err_detect ignore_err`：把解码错误降级为可忽略，播放器同款行为；
+//   - `-fflags +discardcorrupt`：丢弃损坏的包而不是中止；
+//   - `-xerror` 不开：它会在第一个错误处中止，与容错目标相反。
+//
+// 3 秒而不是 1 秒：坏帧往往集中在某一段，多解一点能覆盖更多实际情况；
+// 超时仍按 ProbeTimeout，不额外放宽。
+func lenientDecodeOnce(ctx context.Context, ffmpeg, path string, run CmdRunner, timeout time.Duration) bool {
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	args := []string{
+		"-v", "error", "-nostdin",
+		"-err_detect", "ignore_err",
+		"-fflags", "+discardcorrupt",
+		"-i", path, "-t", "3", "-f", "null", "-",
+	}
+	_, _, err := run(cctx, ffmpeg, args...)
+	if err != nil {
+		return false
+	}
+	return cctx.Err() == nil
 }
 
 // decodeOnce 解码指定起点后 1 秒；返回 nil 表示这一段能正常解出。
@@ -273,6 +326,8 @@ func ReasonLabel(reason string) string {
 		return "含非中日韩的特殊字符"
 	case ReasonEncoding:
 		return "文件名编码异常（非 UTF-8）"
+	case ReasonMissingDot:
+		return "末尾扩展名缺点号"
 	case ReasonMismatch:
 		return "扩展名与内容不符"
 	case ReasonUpperExt:

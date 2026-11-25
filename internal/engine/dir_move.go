@@ -20,8 +20,8 @@ import (
 // 索引同步因此必须按前缀改写（待定问题 #6）：files 与 health_results 里
 // 所有位于旧目录下的行都要跟着换前缀，等下次扫描收敛会留几小时死行。
 //
-// 边界（发布前与用户确认过的约束）：
-//   - 同卷 os.Rename；跨卷直接拒绝（与 MoveFiles 同口径，不做 copy+delete）
+// 边界（v4.2.0 起更新）：
+//   - 同卷 os.Rename；跨卷走递归复制+校验+删源（与 MoveFiles 同口径）
 //   - 目标必须在受管卷内（三步防线：Clean + EvalSymlinks + 卷前缀重判）
 //   - 不允许移进自己或自己的子目录（会形成环）
 //   - 目标位置已存在同名目录时不覆盖，报错收场
@@ -66,10 +66,7 @@ func (e *Engine) moveDirCheck(srcDir, dstDir string) string {
 	if _, derr := os.Lstat(dstDir); derr == nil {
 		return "目标位置已存在同名目录"
 	}
-	// 同卷限定：目录 rename 跨卷会返回 EXDEV，预检先报清楚
-	if e.VolumeOf(srcDir) != e.VolumeOf(dstDir) {
-		return "跨卷移动暂不支持"
-	}
+	// v4.2.0：跨卷不再拒绝，执行时降级为递归复制+校验+删源（见 copy_verify.go）。
 	// 禁止移进自己或自己的子目录：src == dst 或 dst 在 src 下面会形成环
 	if dstDir == srcDir || strings.HasPrefix(dstDir, srcDir+string(os.PathSeparator)) {
 		return "不能移动到自身或自己的子目录内"
@@ -149,7 +146,8 @@ func (e *Engine) MoveDir(ctx context.Context, srcDir, dstDir string) *MoveDirRes
 	// v3.25.2（只读排查 P3-6）：与其余落位统一走 renameNoOverwrite。
 	// 前面的 Lstat 只说明「检查那一刻目标不存在」，外部进程仍可能在这之后建同名空目录，
 	// 裸 os.Rename 会把它静默替换掉。
-	if err := renameNoOverwrite(srcDir, dstDir); err != nil {
+	// v4.2.0：moveDirAcross 同卷仍是 renameNoOverwrite，跨卷自动降级递归复制+校验+删源。
+	if err := moveDirAcross(srcDir, dstDir); err != nil {
 		snap.Skip(srcDir, "移动失败："+err.Error())
 		_ = e.finishOpSnapshot(snap)
 		res.Error = "移动失败：" + err.Error()
@@ -213,7 +211,8 @@ func (e *Engine) UndoMoveDir(ctx context.Context, taskID int64) (done, failed in
 			continue
 		}
 		// v3.25.2：撤销目录移动同样不能裸改名，避免抢占外部刚创建的同名目录。
-		if err := renameNoOverwrite(a.NewPath, a.OriginalPath); err != nil {
+		// v4.2.0：跨卷同样支持。
+		if err := moveDirAcross(a.NewPath, a.OriginalPath); err != nil {
 			failed++
 			continue
 		}

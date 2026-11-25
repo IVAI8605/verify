@@ -387,6 +387,12 @@ func (e *Engine) planRename(p string, kind health.Kind, opt health.NameOptions, 
 			suggest = strings.ToLower(strings.TrimSpace(ex.ForceExt))
 		} else {
 			suggest = f.SuggestExt
+			// v4.2.0（2026-11-25 建议 2）：检测阶段已经算好完整目标名，
+			// 多重扩展名（movie.x264.aac.mp4）按它剥离多余后缀，
+			// 而不是只换最后一个扩展名得到 movie.x264.aac.mp4 → movie.x264.aac.mp4。
+			if fixed, ok := health.BuildExtTarget(f); ok {
+				return uniqueTarget(dir, p, fixed), ""
+			}
 		}
 	}
 
@@ -394,14 +400,19 @@ func (e *Engine) planRename(p string, kind health.Kind, opt health.NameOptions, 
 	if !ok {
 		return "", ""
 	}
-	// 目标名与原文件同名（仅大小写不同）时，Windows 上 rename 会失败，先按需要保留。
+	return uniqueTarget(dir, p, target), ""
+}
+
+// uniqueTarget 在目标名已被占用时追加 _1/_2，绝不覆盖。
+// 目标名与原文件同名（仅大小写不同）时不算占用：那是改名本身。
+func uniqueTarget(dir, src, target string) string {
 	return health.UniquePath(dir, target, func(candidate string) bool {
-		if strings.EqualFold(candidate, p) {
+		if strings.EqualFold(candidate, src) {
 			return false
 		}
 		_, err := os.Lstat(candidate)
 		return err == nil
-	}), ""
+	})
 }
 
 // DryRunHealthRename 只计算改名的计划与风险，不落盘、不记审计、不同步索引
@@ -637,4 +648,78 @@ func (e *Engine) UndoHealthTask(ctx context.Context, taskID int64) (*HealthOpRes
 // HealthLastAuditTask 返回最近一次可撤销的任务号，0 表示没有。
 func (e *Engine) HealthLastAuditTask(ctx context.Context) (int64, error) {
 	return e.st.LastAuditTaskID(ctx)
+}
+
+// RenameAllHealth 把某类检测结果里「能按建议修好」的条目一次性改名（v4.2.0，2026-11-25 建议 1）。
+//
+// 与按 paths 改名的差别：路径由服务端从库里自己取，避免前端回传上千条路径
+// 造成请求体过大，也避免「页面只加载了一部分，用户以为点了全部」的错觉。
+//
+// 过滤规则与页面一致：
+//   - 跳过「无法确定」的提示项（unknown / timeout / oversized）与编码异常行；
+//   - reason 非空时只处理命中该原因的条目（对应页面「按当前原因」）；
+//   - 其余交给 RenameHealthFiles，规则与手工勾选完全同一条代码路径。
+func (e *Engine) RenameAllHealth(ctx context.Context, kind health.Kind, reason string, opt health.NameOptions, onlyUppercase bool, extra ...HealthRenameExtra) *HealthOpResult {
+	paths, err := e.healthActionablePaths(ctx, string(kind), reason)
+	if err != nil {
+		return &HealthOpResult{Items: []HealthOpItem{{Error: "读取检测结果失败：" + err.Error()}}, Failed: 1}
+	}
+	if len(paths) == 0 {
+		return &HealthOpResult{Items: []HealthOpItem{}}
+	}
+	return e.RenameHealthFiles(ctx, kind, paths, opt, onlyUppercase, extra...)
+}
+
+// DryRunRenameAllHealth 是 RenameAllHealth 的预演版本。
+func (e *Engine) DryRunRenameAllHealth(ctx context.Context, kind health.Kind, reason string, opt health.NameOptions, onlyUppercase bool, extra ...HealthRenameExtra) *HealthOpResult {
+	paths, err := e.healthActionablePaths(ctx, string(kind), reason)
+	if err != nil {
+		return &HealthOpResult{Items: []HealthOpItem{{Error: "读取检测结果失败：" + err.Error()}}, Failed: 1}
+	}
+	return e.DryRunHealthRename(ctx, kind, paths, opt, onlyUppercase, extra...)
+}
+
+// healthActionablePaths 从库里取出某类结果中可批量处理的路径。
+func (e *Engine) healthActionablePaths(ctx context.Context, kind, reason string) ([]string, error) {
+	const page = 5000
+	var out []string
+	seen := make(map[string]bool)
+	for off := 0; ; off += page {
+		rows, err := e.st.ListHealthResults(ctx, kind, page, off)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			reasons := r.Reasons
+			if len(reasons) == 0 {
+				reasons = []string{r.Reason}
+			}
+			advisory := false
+			matched := reason == ""
+			for _, rs := range reasons {
+				if health.AdvisoryReason(rs) {
+					advisory = true
+				}
+				if rs == reason {
+					matched = true
+				}
+			}
+			if advisory || !matched {
+				continue
+			}
+			// 编码异常行不能在页面上回传修改：路径里的 U+FFFD 对不上磁盘文件。
+			if strings.ContainsRune(r.Path, '\uFFFD') {
+				continue
+			}
+			if seen[r.Path] {
+				continue
+			}
+			seen[r.Path] = true
+			out = append(out, r.Path)
+		}
+		if len(rows) < page {
+			break
+		}
+	}
+	return out, nil
 }

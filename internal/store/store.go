@@ -148,6 +148,17 @@ CREATE TABLE IF NOT EXISTS health_results (
   detected_at INTEGER NOT NULL DEFAULT 0,
   UNIQUE(kind, path)
 );
+-- v4.2.0：用户手动标为「误报/忽略」的健康条目（2026-11-25 建议 4）。
+-- 记录 size+mtime：文件被换掉后忽略自动失效，别人改过的文件不会一直被藏起来。
+-- 只是「不再上报」，不删除任何磁盘文件，也不影响其它检测类型。
+CREATE TABLE IF NOT EXISTS health_ignored (
+  path       TEXT PRIMARY KEY,
+  kind       TEXT NOT NULL DEFAULT '',
+  size       INTEGER NOT NULL DEFAULT 0,
+  mtime      INTEGER NOT NULL DEFAULT 0,
+  reason     TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
 CREATE INDEX IF NOT EXISTS idx_health_kind ON health_results(kind);
 -- v3.10.11（第七轮 P2-2）：健康页固定按 size DESC, path 分页，
 -- 单列索引会让 SQLite 建临时 B-tree 排序；复合索引直接给出顺序。旧库在 Open 时补建。

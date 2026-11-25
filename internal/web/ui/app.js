@@ -847,6 +847,8 @@ document.addEventListener('click', async (ev) => {
     h.kind = el.dataset.kind; h.sel.clear();
     // 切换模块时把上一个模块的批量进度卡片清掉，避免张冠李戴。
     h.op = null;
+    // v4.2.0：幽灵行复核按类型做，切到别的类型要允许重新复核一次。
+    h.pruned = false;
     await loadHealth();
   } else if (act === 'health-scan') {
     // v3.9.3：主按钮一次扫全部 7 类，次要按钮只扫当前查看的类型。
@@ -953,6 +955,23 @@ document.addEventListener('click', async (ev) => {
     if (!paths.length) { toast('先选择文件', 'err'); return; }
     // v3.10.2：转简体也走进度条与完成页（与修正/清理一致），逻辑在 settings.js。
     healthConfirm('确认转简体', h.items.filter(x => h.sel.has(x.path)), () => healthToSimpPaths(paths));
+  } else if (act === 'health-fix-all') {
+    await healthFixAll();
+  } else if (act === 'health-ignore-one') {
+    healthConfirm('确认标为误报（不再上报）', [{path: el.dataset.path}], () => healthIgnorePaths([el.dataset.path]), false);
+  } else if (act === 'health-ignore-sel') {
+    const h = healthState();
+    const paths = Array.from(h.sel);
+    if (!paths.length) { toast('先选择文件', 'err'); return; }
+    healthConfirm('确认标为误报（不再上报）', h.items.filter(x => h.sel.has(x.path)), () => healthIgnorePaths(paths), false);
+  } else if (act === 'health-ignore-open') {
+    await showHealthIgnores();
+  } else if (act === 'health-unignore-one') {
+    await healthUnignore([el.dataset.path]);
+  } else if (act === 'health-unignore-all') {
+    await healthUnignoreAll();
+  } else if (act === 'health-move-sel') {
+    healthMoveSel();
   } else if (act === 'health-undo') {
     await healthUndo();
   } else if (act === 'export-menu') {

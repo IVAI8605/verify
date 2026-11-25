@@ -1044,7 +1044,7 @@ function closeModal(){
 function openDirPicker(mode, start, initial, target){
   const t = target || mode;
   S.dir = { mode: mode, target: t, path: '', selected: new Set(initial || []), listing: null };
-  const titles = { log: '选择日志目录', cache: '选择缩略图缓存目录', scan: '选择扫描目录', wizardScan: '选择扫描文件夹', wizardExclude: '选择排除文件夹', excludeDir: '选择不扫描的文件夹', protectDir: '选择受保护的文件夹', move: '选择目标目录（进入后点确定）', movedir: '选择目标位置（目录将移到这下面）', searchdir: '选择搜索目录（仅限扫描范围内）' };
+  const titles = { log: '选择日志目录', cache: '选择缩略图缓存目录', scan: '选择扫描目录', wizardScan: '选择扫描文件夹', wizardExclude: '选择排除文件夹', excludeDir: '选择不扫描的文件夹', protectDir: '选择受保护的文件夹', move: '选择目标目录（进入后点确定）', movedir: '选择目标位置（目录将移到这下面）', healthmove: '选择目标目录（健康页选中文件移到这里）', searchdir: '选择搜索目录（仅限扫描范围内）' };
   $('dirTitle').textContent = titles[t] || '选择目录';
   // v3.5.3：每次打开清空上一次粘贴的路径，避免误用旧值
   const manual = $('dirManual');
@@ -1121,6 +1121,15 @@ async function finishDirPicker(){
     const paths = S.movePaths || [];
     S.movePaths = null;
     await moveExecute(target, paths);
+    return;
+  }
+  if (d.mode === 'healthmove') {
+    if (!d.path) { toast('请先进入目标目录再点确定', 'err'); return; }
+    closeDirPicker();
+    const target = d.path;
+    const paths = S.healthMovePaths || [];
+    S.healthMovePaths = null;
+    await healthMoveExecute(target, paths);
     return;
   }
   if (d.mode === 'movedir') {

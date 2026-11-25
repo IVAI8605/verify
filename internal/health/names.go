@@ -5,6 +5,7 @@ package health
 
 import (
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -32,6 +33,10 @@ const (
 	// 这类名字入库后，JSON 会把非法字节换成 U+FFFD，前端回传的路径永远对不上原文件，
 	// 因此在「文件名不规范」里单独成一类，由服务端重新计算目标名来修。
 	ReasonEncoding = "invalid_encoding"
+	// ReasonMissingDot 末尾粘连了已知扩展名但缺分隔点（v4.2.0）。
+	// 典型如相机/手机导出的 VID_20240115_150825_676_545mp4，
+	// 后缀名归进了文件名主干，按扩展名筛选/播放器识别都会失效。
+	ReasonMissingDot = "missing_dot"
 )
 
 // NameOptions 控制文件名检测中默认关闭的两条规则。
@@ -93,6 +98,11 @@ func CheckName(name string, opt NameOptions) (NameFinding, bool) {
 	if hasRepeatedPunct(base) {
 		f.Reasons = append(f.Reasons, ReasonRepeat)
 	}
+	// v4.2.0：末尾粘连已知扩展名却缺点号（VID_..._545mp4）。
+	// 放在扩展名类判定之外——它是文件名主干的问题，修法是补一个点。
+	if gluedExt(name) != "" {
+		f.Reasons = append(f.Reasons, ReasonMissingDot)
+	}
 	if opt.RestrictCharset && hasDisallowed(base) {
 		f.Reasons = append(f.Reasons, ReasonCharset)
 	}
@@ -121,6 +131,14 @@ func NormalizeName(name string, opt NameOptions) string {
 		name = fixed
 	}
 	base, ext := splitName(name)
+	// v4.2.0：末尾粘连的扩展名先拆出来，否则下面的主干清理会把
+	// VID_..._545mp4 当成一个整体，补不回那个点。
+	if ext == "" {
+		if glued := gluedExt(base); glued != "" {
+			ext = glued
+			base = strings.TrimSuffix(base, glued)
+		}
+	}
 
 	base = stripEmoji(base)
 	base = strings.TrimSpace(base)
@@ -179,6 +197,56 @@ func escapeInvalidBytes(s string) string {
 	}
 	return b.String()
 }
+
+// gluedExt 判断文件名末尾是否粘连了一个已知扩展名却缺点号（v4.2.0）。
+//
+// 只认「扩展名前面紧跟数字」这一种形态：真实样本 VID_20240115_150825_676_545mp4
+// 是相机/手机导出时把点号吃掉了。规则放宽到任意字母边界会把 songmp3、
+// 报告pdf 这类本来就叫这个名字的文件全部误报——改错名字比漏报更糟。
+//
+// 已经有扩展名的文件一律不判：那是扩展名检测的职责，两类结论不能互相覆盖。
+func gluedExt(name string) string {
+	base, ext := splitName(name)
+	if ext != "" || base == "" {
+		return ""
+	}
+	lower := strings.ToLower(base)
+	// 按长度倒序匹配，避免 .ts 抢先吃掉 .mts 这类同尾扩展名。
+	for _, e := range gluedExts {
+		if !strings.HasSuffix(lower, e) {
+			continue
+		}
+		cut := len(base) - len(e)
+		if cut <= 0 {
+			continue
+		}
+		r, size := utf8.DecodeLastRuneInString(base[:cut])
+		if size == 0 || !unicode.IsDigit(r) {
+			continue
+		}
+		return base[cut:]
+	}
+	return ""
+}
+
+// gluedExts 是允许「缺点号」形态的扩展名，按长度倒序，全部小写。
+// 只收常见的相机/手机导出容器；txt、doc 这类不靠扩展名识别内容的格式不收，
+// 否则人写的文件名（如 说明1txt）会被当成问题。
+var gluedExts = func() []string {
+	list := []string{
+		"mp4", "m4v", "mov", "3gp", "mkv", "webm", "avi", "wmv", "flv",
+		"mts", "m2ts", "ts", "mpg", "mpeg", "vob", "rm", "rmvb",
+		"jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff",
+		"mp3", "m4a", "aac", "flac", "wav",
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if len(list[i]) != len(list[j]) {
+			return len(list[i]) > len(list[j])
+		}
+		return list[i] < list[j]
+	})
+	return list
+}()
 
 // splitName 拆出主干与扩展名（扩展名不含点）。
 func splitName(name string) (string, string) {

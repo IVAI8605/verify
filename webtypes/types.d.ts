@@ -323,6 +323,22 @@ interface GroupsSimpleResp {
   total: number;
 }
 
+/** 后端 healthIgnoreItemResp（6 个字段）。 */
+interface HealthIgnoreItemResp {
+  path: string;
+  kind: string;
+  size: number;
+  mtime: number;
+  reason: string;
+  created_at: number;
+}
+
+/** 后端 healthIgnoreListResp（2 个字段）。 */
+interface HealthIgnoreListResp {
+  total: number;
+  items: HealthIgnoreItemResp[];
+}
+
 /** 后端 healthItemsResponse（3 个字段）。 */
 interface HealthItemsResp {
   kind: string;
@@ -345,6 +361,15 @@ interface HealthOpResultResp {
   failed: number;
   items: HealthOpItemResp[];
   reconcile?: any;
+}
+
+/** 后端 healthPruneResp（5 个字段）。 */
+interface HealthPruneResp {
+  ok: boolean;
+  checked: number;
+  removed: number;
+  skipped: number;
+  skipped_volumes?: VolumeSkipResp[];
 }
 
 /** 后端 healthResultsResponse（3 个字段）。 */
@@ -480,12 +505,13 @@ interface MoveDoneResp {
   to: string;
 }
 
-/** 后端 moveFilesResultResp（4 个字段）。 */
+/** 后端 moveFilesResultResp（5 个字段）。 */
 interface MoveFilesResultResp {
   task_id?: number;
   done: MoveDoneResp[];
   failed: string[];
   errors: any;
+  cross_vol?: number;
 }
 
 /** 后端 moveResultResponse（2 个字段）。 */

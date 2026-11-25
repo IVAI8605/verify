@@ -263,6 +263,17 @@ func (e *Engine) runHealth(ctx context.Context, kind health.Kind, taskID int64, 
 				applog.Info("损坏视频检测续跑：丢弃 %d 条与磁盘不一致的旧结论", dropped)
 			}
 			keepRows = fresh
+			// 用户已标为误报的不再回写，否则忽略会被续跑逻辑覆盖回去。
+			if im, ierr := e.st.HealthIgnoreMap(ctx); ierr == nil && len(im) > 0 {
+				kept := keepRows[:0]
+				for _, r := range keepRows {
+					if _, ok := im[r.Path]; ok {
+						continue
+					}
+					kept = append(kept, r)
+				}
+				keepRows = kept
+			}
 		}
 		if len(keepRows) > 0 {
 			done = make(map[string]bool, len(keepRows))
@@ -289,6 +300,10 @@ func (e *Engine) runHealth(ctx context.Context, kind health.Kind, taskID int64, 
 	}
 
 	grouped, walkErr := e.collectHealthCandidateGroups(ctx, roots, kind)
+	// v4.2.0：用户标为误报且文件未变的路径不再上报（2026-11-25 建议 4）。
+	for gi := range grouped {
+		grouped[gi] = e.filterIgnoredPaths(ctx, grouped[gi])
+	}
 	var candidates []string
 	for _, g := range grouped {
 		candidates = append(candidates, g...)

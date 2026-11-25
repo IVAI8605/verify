@@ -21,6 +21,9 @@ type MoveResult struct {
 	Done   []MoveDone        `json:"done"`
 	Failed []string          `json:"failed"`
 	Errors map[string]string `json:"errors"`
+	// CrossVol 是其中走「跨卷复制+校验+删源」的条数（v4.2.0）。
+	// 跨卷比同卷 rename 慢很多，界面据此提示用户耐心等待。
+	CrossVol int `json:"cross_vol,omitempty"`
 }
 
 // MoveDone 是一个成功移动的条目。
@@ -54,10 +57,7 @@ func (e *Engine) moveCheck(src, targetDir string) string {
 	if e.VolumeOf(src) == "" {
 		return "源文件不在受管卷内"
 	}
-	// 第一版只做同卷 os.Rename（设计文档 10.4：跨卷明确不支持，预检即报）
-	if e.VolumeOf(src) != e.VolumeOf(targetDir) {
-		return "跨卷移动暂不支持"
-	}
+	// v4.2.0：跨卷不再拒绝，执行时降级为「复制+校验+删源」（见 copy_verify.go）。
 	// 保护目录内禁止移出（决策 6）
 	if reason := e.protectedReasonResolved(src); reason != "" {
 		return reason
@@ -137,9 +137,11 @@ func (e *Engine) MoveFiles(ctx context.Context, targetDir string, paths []string
 			_, err := os.Lstat(p)
 			return err == nil
 		})
+		crossVol := e.VolumeOf(src) != e.VolumeOf(targetDir)
 		// v3.25.1：UniquePath 只保证「检查那一刻不存在」，到 rename 之间外部进程
 		// 仍可能创建同名文件；裸 os.Rename 会静默覆盖，与上面「绝不覆盖」的承诺相反。
-		if err := renameNoOverwrite(src, dst); err != nil {
+		// v4.2.0：moveFileAcross 在同卷仍是 renameNoOverwrite，跨卷自动降级复制+校验+删源。
+		if err := moveFileAcross(src, dst); err != nil {
 			res.Failed = append(res.Failed, src)
 			res.Errors[src] = "移动失败：" + renameFailText(err)
 			continue
@@ -156,6 +158,9 @@ func (e *Engine) MoveFiles(ctx context.Context, targetDir string, paths []string
 		// 索引同步：只改路径不删行（见 syncMovedIndex）。
 		pairs = append(pairs, [2]string{src, dst})
 		e.UpdatePath(filepath.Dir(src))
+		if crossVol {
+			res.CrossVol++
+		}
 		res.Done = append(res.Done, MoveDone{From: src, To: dst})
 	}
 	if len(pairs) > 0 {
@@ -207,7 +212,8 @@ func (e *Engine) UndoMove(ctx context.Context, taskID int64) (done, failed int, 
 			return lex == nil
 		})
 		// v3.25.1：撤销移动与正向移动同一口径，冲突时失败而不是静默覆盖。
-		if err := renameNoOverwrite(a.NewPath, dst); err != nil {
+		// v4.2.0：跨卷同样支持（复制+校验+删源）。
+		if err := moveFileAcross(a.NewPath, dst); err != nil {
 			failed++
 			continue
 		}

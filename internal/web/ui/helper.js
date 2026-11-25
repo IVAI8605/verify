@@ -273,6 +273,8 @@ const OPS_GUARD_ACTS = new Set([
   'fanjian-menu', 'fanjian-run', 'fanjian-undo',
   'health-rename-one', 'health-rename-sel', 'health-trash-one', 'health-trash-sel',
   'health-to-simp', 'health-undo',
+  // v4.2.0：健康页新增的写动作同样在扫描/检测期间置灰。
+  'health-fix-all', 'health-ignore-one', 'health-ignore-sel', 'health-move-sel',
   'photo-trash-sel', 'big-trash-sel',
   'import-trash', 'import-trash-marked',
   // v3.10.8（P2-3）：补上同样会动文件的写动作，扫描/健康检测期间一并置灰。

@@ -82,6 +82,10 @@ func (e *Engine) runHealthAll(ctx context.Context, taskID int64, opt HealthOptio
 	startedAt := time.Now().Unix()
 
 	grouped, walkErr := e.collectHealthCandidateGroups(ctx, roots, health.KindAll)
+	// v4.2.0：用户标为误报且文件未变的路径不再上报。
+	for gi := range grouped {
+		grouped[gi] = e.filterIgnoredPaths(ctx, grouped[gi])
+	}
 	var files []string
 	for _, g := range grouped {
 		files = append(files, g...)

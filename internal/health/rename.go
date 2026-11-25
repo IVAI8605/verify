@@ -8,6 +8,20 @@ import (
 	"strings"
 )
 
+// BuildExtTarget 依据扩展名检测结论生成完整目标文件名（v4.2.0）。
+//
+// 与 BuildTarget 的差别：多重扩展名要连主干里残留的已知扩展名一起剥掉，
+// 而 BuildTarget 只换最后一个扩展名（video.mp4.avi → video.mp4.mp4）。
+// 检测阶段已经把目标名算进 ExtFinding.FixName，这里只做存在性判断。
+//
+// 返回 false 表示没有可执行的目标（内容无法识别、目标与原名相同等）。
+func BuildExtTarget(f ExtFinding) (string, bool) {
+	if f.FixName == "" {
+		return "", false
+	}
+	return f.FixName, true
+}
+
 // BuildTarget 依据检测结论生成修正后的文件名（不含目录）。
 //
 // 返回 false 表示不需要改动或无法给出安全的目标名——重命名是破坏性操作，

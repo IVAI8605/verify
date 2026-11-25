@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -432,6 +433,148 @@ func (s *Store) HealthPaths(ctx context.Context, kind string) (map[string]bool, 
 			return nil, err
 		}
 		out[p] = true
+	}
+	return out, rows.Err()
+}
+
+// HealthRowRef 是健康结论的最小投影（id/kind/path/size），
+// 供「磁盘存在性复核」这类只判断行是否还有效、不需要 detail/suggest 的场景使用。
+type HealthRowRef struct {
+	ID   int64
+	Kind string
+	Path string
+	Size int64
+}
+
+// AllHealthRows 返回某类（kind 为空表示全部）健康结论的轻量投影。
+// 路径复核要遍历整表，避免把 detail/suggest 这些大字段一起读进内存。
+func (s *Store) AllHealthRows(ctx context.Context, kind string) ([]HealthRowRef, error) {
+	q := `SELECT id, kind, path, size FROM health_results`
+	args := []any{}
+	if kind != "" {
+		q += ` WHERE kind=?`
+		args = append(args, kind)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []HealthRowRef{}
+	for rows.Next() {
+		var r HealthRowRef
+		if err := rows.Scan(&r.ID, &r.Kind, &r.Path, &r.Size); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// DeleteHealthByIDs 按主键批量删除健康结论（幽灵行复核用）。
+//
+// 按 id 而不是按路径删除：复核与删除之间同一路径可能又被新一轮检测写入，
+// 按路径删会误删刚生成的新结论；id 定位到复核时看到的那一行。
+func (s *Store) DeleteHealthByIDs(ctx context.Context, ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	const chunk = 400
+	var total int64
+	for start := 0; start < len(ids); start += chunk {
+		end := start + chunk
+		if end > len(ids) {
+			end = len(ids)
+		}
+		part := ids[start:end]
+		args := make([]any, 0, len(part))
+		for _, id := range part {
+			args = append(args, id)
+		}
+		// #nosec G202 -- 拼接内容仅为 len(part) 个问号，无外部输入
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")
+		res, err := s.db.ExecContext(ctx, `DELETE FROM health_results WHERE id IN (`+ph+`)`, args...)
+		if err != nil {
+			return total, err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+	}
+	return total, nil
+}
+
+// HealthIgnore 是一条「误报忽略」记录。
+type HealthIgnore struct {
+	Path      string `json:"path"`
+	Kind      string `json:"kind"`
+	Size      int64  `json:"size"`
+	Mtime     int64  `json:"mtime"`
+	Reason    string `json:"reason"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+// AddHealthIgnore 记录一条忽略；同一路径重复标记时覆盖（以最新文件身份为准）。
+func (s *Store) AddHealthIgnore(ctx context.Context, it HealthIgnore) error {
+	if it.CreatedAt == 0 {
+		it.CreatedAt = time.Now().Unix()
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO health_ignored(path,kind,size,mtime,reason,created_at)
+		VALUES(?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET
+		kind=excluded.kind, size=excluded.size, mtime=excluded.mtime,
+		reason=excluded.reason, created_at=excluded.created_at`,
+		it.Path, it.Kind, it.Size, it.Mtime, it.Reason, it.CreatedAt)
+	return err
+}
+
+// RemoveHealthIgnore 取消若干路径的忽略标记。
+func (s *Store) RemoveHealthIgnore(ctx context.Context, paths []string) (int64, error) {
+	if len(paths) == 0 {
+		return 0, nil
+	}
+	var total int64
+	for _, p := range paths {
+		res, err := s.db.ExecContext(ctx, `DELETE FROM health_ignored WHERE path=?`, p)
+		if err != nil {
+			return total, err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+	}
+	return total, nil
+}
+
+// HealthIgnoreMap 返回忽略表（path → 记录），供检测时按 size+mtime 判断是否仍有效。
+func (s *Store) HealthIgnoreMap(ctx context.Context) (map[string]HealthIgnore, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT path,kind,size,mtime,reason,created_at FROM health_ignored`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]HealthIgnore{}
+	for rows.Next() {
+		var it HealthIgnore
+		if err := rows.Scan(&it.Path, &it.Kind, &it.Size, &it.Mtime, &it.Reason, &it.CreatedAt); err != nil {
+			return nil, err
+		}
+		out[it.Path] = it
+	}
+	return out, rows.Err()
+}
+
+// ListHealthIgnore 列出全部忽略记录（最新在前）。
+func (s *Store) ListHealthIgnore(ctx context.Context) ([]HealthIgnore, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT path,kind,size,mtime,reason,created_at FROM health_ignored ORDER BY created_at DESC, path`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []HealthIgnore{}
+	for rows.Next() {
+		var it HealthIgnore
+		if err := rows.Scan(&it.Path, &it.Kind, &it.Size, &it.Mtime, &it.Reason, &it.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
 	}
 	return out, rows.Err()
 }

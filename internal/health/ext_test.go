@@ -457,3 +457,49 @@ func TestCheckExtUnify(t *testing.T) {
 		t.Fatal("mkv/webm 同族不应报")
 	}
 }
+
+// TestCheckExtMultiExtFixName 覆盖 v4.2.0：多重扩展名必须给出可执行目标名。
+func TestCheckExtMultiExtFixName(t *testing.T) {
+	mp4Head := append([]byte{0, 0, 0, 0x20}, []byte("ftypisom")...)
+	cases := []struct {
+		name  string
+		want  string
+		match string
+	}{
+		// 真实样本：主干里残留 .aac 这个已知扩展名。
+		// x264 不在已知类型表里（它是编码名不是容器），按「只剥已知扩展名」保留。
+		{"movie.x264.aac.mp4", "movie.x264.mp4", "应剥掉已知的 aac，保留 x264"},
+		// 内容其实是 mp4，却被误加了 .png：剥掉主干里的 .mp4，目标仍是 mp4
+		{"clip.mp4.png", "clip.mp4", "应剥掉主干里的 .mp4"},
+	}
+	for _, c := range cases {
+		f, bad := CheckExt(c.name, mp4Head, "off")
+		if !bad {
+			t.Fatalf("%s 应判为问题", c.name)
+		}
+		if f.FixName != c.want {
+			t.Fatalf("%s 目标名应为 %q，实际 %q（原因 %v）", c.name, c.want, f.FixName, f.Reasons)
+		}
+	}
+}
+
+// TestCheckExtFixNameNoGuess 内容认不出时必须没有目标名，不允许猜。
+func TestCheckExtFixNameNoGuess(t *testing.T) {
+	f, bad := CheckExt("weird.mp4", []byte("not a media file"), "off")
+	if !bad || f.Reasons[0] != ReasonUnknown {
+		t.Fatalf("应判为 unknown，实际 bad=%v reasons=%v", bad, f.Reasons)
+	}
+	if f.FixName != "" {
+		t.Fatalf("内容无法识别时不应给目标名，实际 %q", f.FixName)
+	}
+}
+
+// TestBuildExtTarget 验证目标名只在有多重扩展名修正结果时可用。
+func TestBuildExtTarget(t *testing.T) {
+	if got, ok := BuildExtTarget(ExtFinding{FixName: "a.mp4"}); !ok || got != "a.mp4" {
+		t.Fatalf("应返回 a.mp4，实际 %q ok=%v", got, ok)
+	}
+	if _, ok := BuildExtTarget(ExtFinding{}); ok {
+		t.Fatalf("空结论不应给出目标名")
+	}
+}

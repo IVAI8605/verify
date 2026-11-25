@@ -1060,7 +1060,8 @@ const HEALTH_REASONS = {
     {key:'repeat', label:'重复标点'},
     {key:'charset', label:'受限字符'},
     {key:'non_cjk', label:'非中日韩字符'},
-    {key:'invalid_encoding', label:'编码异常'}
+    {key:'invalid_encoding', label:'编码异常'},
+    {key:'missing_dot', label:'末尾扩展名缺点号'}
   ],
   traditional: [],
   temp: []
@@ -1124,7 +1125,10 @@ function healthState(){
       showUncertain:false,
       uncertain:{},
       // v3.10.2：批量操作（修正/清理/转简体）的运行态，用于进度条与完成页。
-      op:null
+      op:null,
+      // v4.2.0：已标为误报的忽略清单（仅损坏页加载）与本次页面打开是否已做过幽灵行复核。
+      ignore:[],
+      pruned:false
     };
   }
   return S.health;
@@ -1151,6 +1155,19 @@ async function loadHealth(){
     h.auto = st.auto || null;
     h.probeCache = st.probe_cache || null;
     if (st.last_audit) { h.lastTask = st.last_audit; h.lastTasks = [st.last_audit]; }
+    // v4.2.0：本次打开健康页先做一次「磁盘存在性复核」，清掉文件已被移走/删除的幽灵结论。
+    // 只删派生的健康结论、不动磁盘文件；失败不影响正常加载。
+    if (!h.pruned) {
+      h.pruned = true;
+      try {
+        const pr = await postJSON('/api/health/prune', { kind: h.kind });
+        if (pr && pr.removed > 0) toast('已清理 ' + pr.removed + ' 条失效记录（文件已不在原位置）', 'ok', 4200);
+      } catch(e) { /* 复核失败不阻断列表加载 */ }
+    }
+    // 损坏页加载已标为误报的清单，供「误报标记」按钮显示与恢复。
+    if (h.kind === 'broken') {
+      try { const ig = await api('/api/health/ignore'); h.ignore = ig.items || []; } catch(e) { h.ignore = []; }
+    } else { h.ignore = []; }
     // v3.10.3：首屏失败只影响列表，不把状态接口的其他信息一起丢掉。
     let r;
     try {
@@ -1517,6 +1534,10 @@ function renderHealth(){
       ${h.kind === 'traditional' ? `<button class="btn" id="healthToSimp" data-act="health-to-simp" data-sel-needs${selCount && !busy ? '' : ' disabled'} title="把勾选的繁体文件名转成简体，改完可以用「撤销上次操作」还原">转简体</button>` : ''}
       ${h.kind !== 'traditional' ? `<button class="btn danger" id="healthTrashSel" data-act="health-trash-sel" data-sel-needs${selCount && !busy ? '' : ' disabled'}>移入隔离区</button>` : ''}
       ${h.kind === 'traditional' ? `<button class="btn danger" id="healthTrashSel" data-act="health-trash-sel" data-sel-needs${selCount && !busy ? '' : ' disabled'}>移入隔离区</button>` : ''}
+      ${canRename && actionableAll.length ? `<button class="btn ghost" data-act="health-fix-all"${busy ? ' disabled' : ''} title="把当前类全部可修正条目按建议一次改好（跳过无法确定的提示项）">按建议修正整类（${actionableAll.length}）</button>` : ''}
+      ${h.kind === 'broken' ? `<button class="btn ghost" data-act="health-ignore-sel" data-sel-needs${selCount && !busy ? '' : ' disabled'} title="把选中的误报文件记为忽略，以后不再上报（不删除文件）">标为误报</button>` : ''}
+      ${h.kind === 'broken' ? `<button class="btn ghost" data-act="health-ignore-open" title="查看/恢复已标为误报的文件">误报标记（${(h.ignore || []).length}）</button>` : ''}
+      ${h.kind !== 'empty_dir' ? `<button class="btn ghost" data-act="health-move-sel" data-sel-needs${selCount && !busy ? '' : ' disabled'} title="把选中的文件移动到指定目录（跨卷会自动复制+校验后删源）">移入指定目录…</button>` : ''}
       <button class="btn ghost" data-act="health-undo"${h.lastTask && !busy ? '' : ' disabled'} title="改名类操作（修正扩展名/繁简改名）可按任务撤销；移入隔离区的清理请到隔离区页恢复">撤销上次操作</button>
     </div>
     ${healthOptionsHtml()}
@@ -1556,7 +1577,7 @@ function renderHealth(){
       <td class="fpath" title="${esc(it.path)}">${esc(it.path)}</td>
       <td>${detail}${suggest}${advNote}</td>
       <td class="num">${fmtB(it.size)}</td>
-      <td class="act">${renameBtn}<button class="btn danger" data-act="health-trash-one" data-path="${esc(it.path)}"${adv ? ' disabled' : ''}>移入隔离区</button></td>
+      <td class="act">${renameBtn}<button class="btn danger" data-act="health-trash-one" data-path="${esc(it.path)}"${adv ? ' disabled' : ''}>移入隔离区</button>${(h.kind === 'broken' && !adv && !badEnc) ? `<button class="btn ghost" data-act="health-ignore-one" data-path="${esc(it.path)}" title="标为误报：不再上报该文件（不删除）">标为误报</button>` : ''}</td>
     </tr>`;
   }).join('');
 
@@ -1905,4 +1926,114 @@ async function healthUndo(){
   if (!failedTasks.length) { h.lastTask = 0; h.lastTasks = []; }
   else { h.lastTasks = failedTasks.slice(); h.lastTask = failedTasks[failedTasks.length - 1]; }
   renderHealth();
+}
+
+// ---------- v4.2.0 健康页新增动作 ----------
+
+// healthFixAll 「按建议修正整类」：先服务端预演，确认后一次性执行（建议 1）。
+async function healthFixAll(){
+  const h = healthState();
+  const kind = h.kind;
+  if (kind !== 'ext' && kind !== 'name') { toast('该类型不支持批量修正', 'err'); return; }
+  const opt = { restrict_charset: h.opts.restrict_charset, non_cjk: h.opts.non_cjk };
+  const onlyUpper = kind === 'ext' && !!h.upperOnly;
+  const reason = h.reasonFilter || '';
+  let pv;
+  try {
+    pv = await postJSON('/api/health/rename', {
+      kind, all: true, reason,
+      restrict_charset: opt.restrict_charset, non_cjk: opt.non_cjk,
+      only_uppercase: onlyUpper, dry_run: true
+    });
+  } catch(e) { toast(e.message, 'err'); return; }
+  const items = (pv.items || []).filter(it => it.new_path);
+  if (!items.length) {
+    toast((pv.items && pv.items.length) ? '没有可自动修正的条目（其余需人工确认）' : '当前类没有可修正的条目', 'warn');
+    return;
+  }
+  healthConfirm('确认按建议修正整类', items.map(it => ({ path: it.path, suggest: it.new_path })), () => healthFixAllExec(reason), true);
+}
+
+async function healthFixAllExec(reason){
+  const h = healthState();
+  const kind = h.kind;
+  const opt = { restrict_charset: h.opts.restrict_charset, non_cjk: h.opts.non_cjk };
+  const onlyUpper = kind === 'ext' && !!h.upperOnly;
+  setModal('正在按建议修正整类…', '<div class="hint">服务端正在处理，请稍候。</div>', null);
+  let r;
+  try {
+    r = await postJSON('/api/health/rename', {
+      kind, all: true, reason,
+      restrict_charset: opt.restrict_charset, non_cjk: opt.non_cjk, only_uppercase: onlyUpper
+    });
+  } catch(e) { closeModal(); toast(e.message, 'err'); return; }
+  if (r.task_id) { h.lastTasks = [r.task_id]; h.lastTask = r.task_id; }
+  const items = (r.items || []).map(it => ({
+    path: it.path, ok: !it.error, reason: it.error || ('→ ' + (it.new_path || ''))
+  }));
+  const okN = items.filter(i => i.ok).length;
+  const html = `${previewTable(items.slice(0, 300))}
+    <div class="hint">成功 ${okN} 个，失败 ${items.length - okN} 个。改名可用下方「撤销上次操作」还原。
+    ${items.length > 300 ? '（仅预览前 300 条）' : ''}</div>
+    <div class="pm-actions"><button class="btn primary" data-act="modal-cancel">关闭</button></div>`;
+  setModal('按建议修正整类完成', html, null);
+  await loadHealth();
+}
+
+// healthIgnorePaths 把文件标为「误报/忽略」，不再上报（建议 4）。
+async function healthIgnorePaths(paths){
+  const h = healthState();
+  try {
+    const r = await postJSON('/api/health/ignore', { kind: h.kind, paths });
+    toast('已标记 ' + (r.done || 0) + ' 条为误报，不再上报', 'ok');
+  } catch(e) { toast(e.message, 'err'); }
+  await loadHealth();
+}
+
+// showHealthIgnores 列出已标为误报的文件，可逐条或全部恢复。
+async function showHealthIgnores(){
+  let items = [];
+  try { const r = await api('/api/health/ignore'); items = r.items || []; } catch(e) { toast(e.message, 'err'); return; }
+  if (!items.length) { toast('还没有标为误报的文件', 'warn'); return; }
+  const rows = items.map(it => `<tr>
+    <td class="fpath" title="${esc(it.path)}">${esc(it.path)}</td>
+    <td>${esc(healthKindLabel(it.kind) || it.kind)}</td>
+    <td class="num">${fmtB(it.size)}</td>
+    <td><button class="btn ghost" data-act="health-unignore-one" data-path="${esc(it.path)}">恢复</button></td>
+  </tr>`).join('');
+  setModal('误报标记（' + items.length + '）',
+    `<div class="hint" style="margin-bottom:8px">这些文件被判为问题时你确认是误报，已不再上报。文件内容变了会自动重新参与检测；也可在这里手动恢复。</div>
+     <div class="preview-list" style="max-height:340px;overflow:auto"><table>
+       <thead><tr><th>文件</th><th>类型</th><th>大小</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>
+     <div class="pm-actions"><button class="btn ghost" data-act="health-unignore-all">全部恢复</button>
+       <button class="btn primary" data-act="modal-cancel">关闭</button></div>`, null);
+}
+
+async function healthUnignore(paths){
+  try { await api('/api/health/ignore', { method:'DELETE', headers:{'Content-Type':'application/json','X-Requested-With':'verify'}, body: JSON.stringify({ paths }) }); }
+  catch(e) { toast(e.message, 'err'); return; }
+  toast('已恢复 ' + paths.length + ' 条', 'ok');
+  closeModal();
+  await loadHealth();
+}
+
+async function healthUnignoreAll(){
+  let items = [];
+  try { const r = await api('/api/health/ignore'); items = r.items || []; } catch(e) { toast(e.message, 'err'); return; }
+  if (!items.length) { closeModal(); return; }
+  await healthUnignore(items.map(it => it.path));
+}
+
+// healthMoveSel / healthMoveExecute 把健康页选中的文件移动到指定目录（建议 6）。
+function healthMoveSel(){
+  const h = healthState();
+  const paths = Array.from(h.sel);
+  if (!paths.length) { toast('先选择要移动的文件', 'err'); return; }
+  S.healthMovePaths = paths;
+  openDirPicker('healthmove', '');
+}
+
+async function healthMoveExecute(target, paths){
+  await moveExecute(target, paths);
+  await loadHealth();
 }

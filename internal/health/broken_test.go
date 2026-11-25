@@ -223,3 +223,64 @@ func TestReasonLabel(t *testing.T) {
 		}
 	}
 }
+
+// lenientRunner 严格解码一律失败，容错解码（带 -err_detect）成功。
+// 用来模拟「ffmpeg -v error 中止、播放器却能播」的真实误报场景。
+type lenientRunner struct {
+	lenientCalls int
+	strictCalls  int
+}
+
+func (l *lenientRunner) run(_ context.Context, _ string, args ...string) (string, string, error) {
+	for _, a := range args {
+		if a == "-err_detect" {
+			l.lenientCalls++
+			return "", "", nil
+		}
+	}
+	l.strictCalls++
+	return "", "Invalid data found when processing input", errors.New("exit 1")
+}
+
+// TestProbeVideoLenientConfirm 覆盖 v4.2.0 的损坏二次确认（2026-11-25 建议 4）。
+func TestProbeVideoLenientConfirm(t *testing.T) {
+	r := &lenientRunner{}
+	// 不传 ffprobe：走不到 ffprobe 复核，直接进容错确认分支
+	got := ProbeVideo(context.Background(), "ffmpeg", "", "/v/a.mp4", r.run)
+	if got != nil {
+		t.Fatalf("容错解码能跑完时应判可播放，实际 %+v", got)
+	}
+	if r.lenientCalls != 1 {
+		t.Fatalf("应做一次容错确认，实际 %d 次", r.lenientCalls)
+	}
+}
+
+// TestProbeVideoLenientNotForStructural 结构性失败不做容错确认，省一次 ffmpeg。
+func TestProbeVideoLenientNotForStructural(t *testing.T) {
+	r := &lenientRunner{}
+	got := ProbeVideo(context.Background(), "ffmpeg", "", "/v/a.mp4", func(ctx context.Context, name string, args ...string) (string, string, error) {
+		for _, a := range args {
+			if a == "-err_detect" {
+				r.lenientCalls++
+				return "", "", nil
+			}
+		}
+		return "", "moov atom not found", errors.New("exit 1")
+	})
+	if got == nil || got.Reason != ReasonNoMoov {
+		t.Fatalf("缺 moov 应保留损坏结论，实际 %+v", got)
+	}
+	if r.lenientCalls != 0 {
+		t.Fatalf("结构性失败不应做容错确认，实际 %d 次", r.lenientCalls)
+	}
+}
+
+// TestProbeVideoLenientFailsKeepsStrict 容错解码也失败时保留严格结论。
+func TestProbeVideoLenientFailsKeepsStrict(t *testing.T) {
+	got := ProbeVideo(context.Background(), "ffmpeg", "", "/v/a.mp4", func(_ context.Context, _ string, args ...string) (string, string, error) {
+		return "", "Invalid data found when processing input", errors.New("exit 1")
+	})
+	if got == nil || got.Reason != ReasonInvalidData {
+		t.Fatalf("两次都失败应保留数据无效结论，实际 %+v", got)
+	}
+}

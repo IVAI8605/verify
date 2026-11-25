@@ -159,6 +159,10 @@ type healthPathsRequest struct {
 	ForceExt string `json:"force_ext"`
 	// DryRun 为真时只返回改名计划与风险，不落盘、不记审计（2026-11-25 建议 8）。
 	DryRun bool `json:"dry_run"`
+	// All 为真时忽略 Paths，由服务端从库里取该类型全部可处理条目（v4.2.0，建议 1）。
+	// Reason 非空时只处理命中该原因的条目。
+	All    bool   `json:"all"`
+	Reason string `json:"reason"`
 }
 
 // handleHealthRename 批量修正扩展名或文件名。
@@ -177,7 +181,7 @@ func (s *Server) handleHealthRename(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "该类型不支持重命名"})
 		return
 	}
-	if len(body.Paths) == 0 {
+	if !body.All && len(body.Paths) == 0 {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未选择文件"})
 		return
 	}
@@ -193,7 +197,15 @@ func (s *Server) handleHealthRename(w http.ResponseWriter, r *http.Request) {
 	opt := health.NameOptions{RestrictCharset: body.RestrictCharset, NonCJKNonASCII: body.NonCJK}
 	extra := engine.HealthRenameExtra{Force: body.Force, ForceExt: body.ForceExt}
 	if body.DryRun {
+		if body.All {
+			writeJSON(w, 200, toHealthOpResultResp(s.e.DryRunRenameAllHealth(r.Context(), kind, body.Reason, opt, body.OnlyUppercase, extra)))
+			return
+		}
 		writeJSON(w, 200, toHealthOpResultResp(s.e.DryRunHealthRename(r.Context(), kind, body.Paths, opt, body.OnlyUppercase, extra)))
+		return
+	}
+	if body.All {
+		writeJSON(w, 200, toHealthOpResultResp(s.e.RenameAllHealth(r.Context(), kind, body.Reason, opt, body.OnlyUppercase, extra)))
 		return
 	}
 	writeJSON(w, 200, toHealthOpResultResp(s.e.RenameHealthFiles(r.Context(), kind, body.Paths, opt, body.OnlyUppercase, extra)))
@@ -247,7 +259,7 @@ func (s *Server) handleHealthTrash(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求体解析失败"})
 		return
 	}
-	if len(body.Paths) == 0 {
+	if !body.All && len(body.Paths) == 0 {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未选择文件"})
 		return
 	}
@@ -281,4 +293,70 @@ func (s *Server) handleHealthUndo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, toHealthOpResultResp(res))
+}
+
+// handleHealthPrune 复核健康结论背后文件是否还存在，清掉已失效的行（v4.2.0）。
+// 只读判断 + 删派生数据，不动磁盘文件；卷不在线时整卷跳过。
+func (s *Server) handleHealthPrune(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
+		return
+	}
+	var body struct {
+		Kind string `json:"kind"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	if body.Kind != "" {
+		if k := health.Kind(body.Kind); !k.Valid() {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未知的检测类型"})
+			return
+		}
+	}
+	res, err := s.e.PruneMissingHealth(r.Context(), body.Kind)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, 200, toHealthPruneResp(res))
+}
+
+// handleHealthIgnore 处理误报忽略：GET 列出，POST 标记，DELETE 取消（v4.2.0）。
+func (s *Server) handleHealthIgnore(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		items, err := s.st.ListHealthIgnore(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		writeJSON(w, 200, toHealthIgnoreListResp(items))
+	case http.MethodPost:
+		var body healthPathsRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求体解析失败"})
+			return
+		}
+		if len(body.Paths) == 0 {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "未选择文件"})
+			return
+		}
+		writeJSON(w, 200, toHealthOpResultResp(s.e.IgnoreHealthFiles(r.Context(), body.Kind, body.Paths)))
+	case http.MethodDelete:
+		var body healthPathsRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求体解析失败"})
+			return
+		}
+		n, err := s.e.UnignoreHealth(r.Context(), body.Paths)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		writeJSON(w, 200, okResponse{OK: true})
+		_ = n
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
+	}
 }

@@ -1152,7 +1152,7 @@ async function moveExecute(target, paths){
   const okN = items.filter(i => i.ok).length;
   if (!okN) { showResultModal('移动预检：无可执行项', items); return; }
   const html = `${previewTable(items)}
-    <div class="hint">将移动 ${okN} 个文件到 ${esc(target)}（同卷重命名，瞬时完成；冲突自动追加 _1）。目标目录必须已存在且在受管卷内。</div>
+    <div class="hint">将移动 ${okN} 个文件到 ${esc(target)}（同卷重命名瞬时完成；跨卷自动「复制 + BLAKE3 校验 + 删源」，大文件会慢一些。冲突自动追加 _1）。目标目录必须已存在且在受管卷内。</div>
     <div class="pm-actions"><button class="btn ghost" data-act="modal-cancel">取消</button>
     <button class="btn primary" data-act="move-confirm">确认移动</button></div>`;
   setModal('移动到 ' + target, html, null);
@@ -1173,8 +1173,9 @@ async function moveConfirm(){
   (r.failed || []).forEach(p => items.push({ path: p, ok: false, reason: r.errors[p] || '失败' }));
   S.moveUndoTask = r.task_id || 0;
   const undoBtn = S.moveUndoTask ? `<button class="btn ghost" data-act="move-undo">撤销本次移动</button>` : '';
+  const crossHint = r.cross_vol ? '其中 ' + r.cross_vol + ' 个跨卷移动（已复制并校验后删除源文件）。' : '';
   const html = `${previewTable(items)}
-    <div class="hint">成功 ${okCount(items)} 个，失败 ${items.length - okCount(items)} 个。移动可用审计撤销（恢复到原目录）。</div>
+    <div class="hint">成功 ${okCount(items)} 个，失败 ${items.length - okCount(items)} 个。${crossHint}移动可用审计撤销（恢复到原目录）。</div>
     <div class="pm-actions">${undoBtn}<button class="btn primary" data-act="modal-cancel">关闭</button></div>`;
   setModal('移动结果', html, null);
   S.sel = {};
