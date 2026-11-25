@@ -65,6 +65,9 @@ var (
 	// typeHTML/typeMPEGPS 为同族归一（10.7）新增嗅探：html 前缀找 <html；mpeg-ps 起始码。
 	typeHTML   = mediaType{Name: "html", Exts: []string{"html", "htm"}, Suggest: "html"}
 	typeMPEGPS = mediaType{Name: "mpegps", Exts: []string{"mpg", "mpeg", "vob"}, Suggest: "mpg"}
+	// typeRM 是 RealMedia 容器（2026-11-25）：头 4 字节是 ".RM" + 0x46。
+	// ffprobe 报 format_name=rm；旧实现归进 unknown，需单独识别并建议 rm。
+	typeRM = mediaType{Name: "rm", Exts: []string{"rm", "rmvb"}, Suggest: "rm"}
 )
 
 // ReasonFamily 同族扩展名归一（10.7）：内容确认后把罕见写法改成事实标准。
@@ -172,6 +175,10 @@ func Sniff(head []byte) mediaType {
 			return typeWAV
 		case "WEBP":
 			return typeWEBP
+		case "CDXA":
+			// VCD 的 MPEG-1 数据封装（2026-11-25）：RIFF....CDXAfmt ，
+			// ffprobe 报 format_name=mpeg。归入 MPEG-PS 族，建议 mpg。
+			return typeMPEGPS
 		}
 		return mediaType{}
 	case bytes.HasPrefix(head, []byte{0xFF, 0xD8, 0xFF}):
@@ -210,9 +217,13 @@ func Sniff(head []byte) mediaType {
 			return typeAAC
 		}
 		return typeMP3
-	case len(head) >= 4 && head[0] == 0x00 && head[1] == 0x00 && head[2] == 0x01 && head[3] == 0xBA:
-		// MPEG-PS 起始码（与 TS 的 0x47 不冲突）
+	case len(head) >= 4 && head[0] == 0x00 && head[1] == 0x00 && head[2] == 0x01 &&
+		(head[3] == 0xBA || head[3] == 0xB3):
+		// MPEG-PS 起始码（与 TS 的 0x47 不冲突）：
+		//   BA = pack 起始码；B3 = 视频序列头（2026-11-25，裸 MPEG 视频文件）
 		return typeMPEGPS
+	case bytes.HasPrefix(head, []byte{0x2E, 0x52, 0x4D, 0x46}):
+		return typeRM
 	case looksLikeHTML(head):
 		return typeHTML
 	}
@@ -337,7 +348,7 @@ var knownExts = func() map[string]bool {
 	for _, mt := range []mediaType{
 		typeMP4, typeMOV, typeM4V, typeM4A, type3GP, typeMKV, typeWebM, typeAVI, typeTS,
 		typeFLV, typeWMV, typeJPG, typePNG, typeGIF, typeWEBP, typeBMP, typeTIFF,
-		typePDF, typeZIP, typeRAR, type7Z, typeFLAC, typeMP3, typeWAV, typeAAC,
+		typePDF, typeZIP, typeRAR, type7Z, typeFLAC, typeMP3, typeWAV, typeAAC, typeRM,
 		typeHTML, typeMPEGPS,
 	} {
 		for _, e := range mt.Exts {

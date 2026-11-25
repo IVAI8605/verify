@@ -127,7 +127,7 @@ ffmpeg -hide_banner -encoders | grep qsv
 
 ## 版本
 
-完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v4.1.4** —— 文件健康检测的内容识别与批量修复优化：修正 `.aac`（ADTS 裸流）被误判成 mp3、带前导乱码的 mpegts 被判 unknown 两处误判（用 2026-11-25 实战样本 86/86、68 条回归）；扩展名批量改名新增 force 显式通道（外部 ffprobe 实锤后可改 unknown）、dry-run 预演、路径失效单列与撤销幂等。上一版 v4.1.3 是一批数据准确性、并发安全与接口契约修复。
+完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v4.1.5** —— 文件健康内容识别补齐：新增 VCD（RIFF/CDXA）、裸 MPEG 视频序列头（000001B3）、RealMedia（.RMF）三类嗅探，把重扫后剩余的 11 条 unknown 正确识别为 mpeg/rm。上一版 v4.1.4 修正了 .aac 误判成 mp3、带前导乱码的 mpegts 判 unknown，并新增 force 通道、dry-run、stale_path 与撤销幂等。
 
 ## 维护者 / Maintainer
 

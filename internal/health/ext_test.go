@@ -284,6 +284,42 @@ func TestCheckExtQuietFamilies(t *testing.T) {
 	}
 }
 
+// TestSniffVCDAndRawMPEG 回归 2026-11-25 重扫：5 条 RIFF/CDXA（VCD 的 MPEG-1 封装）
+// 与 1 条裸 MPEG 视频序列头（00 00 01 B3）被判 unknown，ffprobe 实锤是 mpeg/mpegvideo。
+// CDXA 与 B3 都归入 MPEG-PS 族（与已有 000001BA  pack 起始码同族），建议 mpg。
+func TestSniffVCDAndRawMPEG(t *testing.T) {
+	cdxa := append([]byte("RIFF"), []byte{0xC4, 0xB8, 0xD8, 0x25}...)
+	cdxa = append(cdxa, []byte("CDXAfmt ")...)
+	if got := Sniff(cdxa).Name; got != "mpegps" {
+		t.Fatalf("RIFF/CDXA 应识别为 mpegps，实际 %q", got)
+	}
+	if got := Sniff([]byte{0x00, 0x00, 0x01, 0xB3, 0x16, 0x00, 0xF0, 0xC4}).Name; got != "mpegps" {
+		t.Fatalf("MPEG 视频序列头 000001B3 应识别为 mpegps，实际 %q", got)
+	}
+	// .mpg 配 CDXA 头属同族不报；.wmv 配 CDXA 头是错的，应报 mismatch（而非 unknown）
+	if _, bad := CheckExt("堂山天草172.mpg", cdxa, "off"); bad {
+		t.Fatal("mpg 配 CDXA 头属 MPEG-PS 族，不应报错")
+	}
+	if f, bad := CheckExt("堂山天草133.wmv", cdxa, "off"); !bad || f.SuggestExt != "mpg" {
+		t.Fatalf("wmv 配 CDXA 头应建议改 mpg，实际 bad=%v suggest=%q", bad, f.SuggestExt)
+	}
+}
+
+// TestSniffRealMedia 回归 2026-11-25 重扫：4 条 .mp4 文件头是 .RMF（2E 52 4D 46），
+// ffprobe 实锤是 rm 容器。现有 Sniff 认不出 → unknown，需识别并建议 rm。
+func TestSniffRealMedia(t *testing.T) {
+	rmf := []byte{0x2E, 0x52, 0x4D, 0x46, 0x00, 0x00, 0x00, 0x12}
+	if got := Sniff(rmf).Name; got != "rm" {
+		t.Fatalf(".RMF 头应识别为 rm，实际 %q", got)
+	}
+	if f, bad := CheckExt("song.mp4", rmf, "off"); !bad || f.SuggestExt != "rm" {
+		t.Fatalf("MP4 扩展名配 .RMF 头应建议改 rm，实际 bad=%v suggest=%q", bad, f.SuggestExt)
+	}
+	if _, bad := CheckExt("song.rm", rmf, "off"); bad {
+		t.Fatal("rm 文件配 .RMF 头不应报错")
+	}
+}
+
 // TestIsTransportStreamLeadGarbage 回归 2026-11-25 实战：一批 mpegts 前几字节是 garbage，
 // 但 188/376 偏移是标准 TS 包同步字（0x47 40/50 00 10）。旧实现要求首 0x47 在前 8 字节内，
 // 把这批文件判成 unknown，无法批量修正。只验后两包同步即可确认。

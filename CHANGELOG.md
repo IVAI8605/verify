@@ -4,6 +4,20 @@
 >
 > 以下版本均已通过单元测试与真机冒烟验证，逐次验证记录不随仓库分发。
 
+## v4.1.5（2026-11-25）
+
+### 修复
+
+- **VCD（RIFF/CDXA）被判 unknown**：5 条 `.mpg` / `.wmv` 文件是 VCD 的 MPEG-1 封装（头 `RIFF....CDXAfmt `），旧实现只认 AVI/WAVE/WEBP 三种 RIFF 子类型，判成 unknown。现在识别为 MPEG-PS 族并建议 `mpg`，`.wmv` 配 CDXA 头会正确报 mismatch。
+- **裸 MPEG 视频序列头被判 unknown**：1 条 `.mpg` 文件头是 `00 00 01 B3`（视频序列头），旧实现只认 `00 00 01 BA`（pack 起始码）。现在两者都归入 MPEG-PS 族。
+- **RealMedia（.RMF）被判 unknown**：5 条 `.mp4` 文件头是 `.RM` + 0x46，ffprobe 实锤是 rm 容器，旧实现认不出。现在新增 rm 类型并建议 `rm`。
+
+### 升级说明
+
+- 无 schema 变更，可直接覆盖升级。
+- 嗅探规则变更只影响扩展名健康检测的结论；此前判 unknown 的文件需重跑一次「扩展名与内容不符」检测才会重新识别。
+- 11 条实测样本：6 条识别为 mpegps、5 条识别为 rm；另 7 条打不开/损坏的文件仍保留为 unknown。
+
 ## v4.1.4（2026-11-25）
 
 ### 新增
