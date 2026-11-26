@@ -100,12 +100,6 @@ interface VideoFailure {
 interface VideoResult extends StoreMediaMeta {
 }
 
-/** 后端 actionItemsResponse（2 个字段）。 */
-interface ActionItemsResp {
-  action: string;
-  items: any;
-}
-
 /** 后端 addBrowseRootReq（1 个字段）。 */
 interface AddBrowseRootReq {
   path: string;
@@ -164,13 +158,6 @@ interface CountErrorResp {
 interface CountOKResp {
   ok: boolean;
   count: number;
-}
-
-/** 后端 countResponse（3 个字段）。 */
-interface CountResp {
-  ok: boolean;
-  id?: number;
-  count?: number;
 }
 
 /** 后端 diagAuthzResp（7 个字段）。 */
@@ -372,13 +359,6 @@ interface HealthPruneResp {
   skipped_volumes?: VolumeSkipResp[];
 }
 
-/** 后端 healthResultsResponse（3 个字段）。 */
-interface HealthResultsResp {
-  kind: string;
-  total: number;
-  items: any;
-}
-
 /** 后端 healthStatusResponse（7 个字段）。 */
 interface HealthStatusResp {
   progress: any;
@@ -405,11 +385,6 @@ interface ImportResultResp {
   matched: number;
   unmatched: number;
   warnings?: string[];
-}
-
-/** 后端 importSessionResponse（1 个字段）。 */
-interface ImportSessionResp {
-  session: any;
 }
 
 /** 后端 importSessionsResponse（1 个字段）。 */
@@ -610,12 +585,6 @@ interface RelinkResultResp {
   items: RelinkItemResp[];
   ok_count: number;
   bytes: number;
-}
-
-/** 后端 removedErrorsResponse（2 个字段）。 */
-interface RemovedErrorsResp {
-  removed: number;
-  errors: any;
 }
 
 /** 后端 renameBatchItemResp（6 个字段）。 */
@@ -845,12 +814,6 @@ interface RuleSearchStatusResp {
 /** 后端 runsResponse（1 个字段）。 */
 interface RunsResp {
   runs: any;
-}
-
-/** 后端 searchFacetsResponse（2 个字段）。 */
-interface SearchFacetsResp {
-  state: string;
-  totals: any;
 }
 
 /** 后端 searchNotReadyResponse（3 个字段）。 */
@@ -1098,19 +1061,6 @@ interface UserPrefStatsResp {
   total: number;
   adopt: number;
   changed: number;
-}
-
-/** 后端 videoTagSavedResponse（4 个字段）。 */
-interface VideoTagSavedResp {
-  ok: boolean;
-  id: number;
-  count?: number;
-  warning?: string;
-}
-
-/** 后端 videoTagsResponse（1 个字段）。 */
-interface VideoTagsResp {
-  tags: StoreVideoTag[];
 }
 
 /** 后端 volumeSkipResp（3 个字段）。 */

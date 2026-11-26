@@ -1,5 +1,5 @@
 appname=verify
-version=4.2.1
+version=4.2.2
 display_name=查重助手
 desc=飞牛 NAS 重复文件清理与实时查重助手：按文件内容精确查重、同名文件分组、视频相似检测、相同片头检测（1–300 秒可调），支持隔离区恢复与 Duplicate Cleaner 兼容 CSV 导出。视频分析复用系统 FFmpeg，可选用 Intel 核显 QSV 硬解加速。
 platform=x86
@@ -11,6 +11,6 @@ os_min_version=1.2.1200
 service_port=8898
 checkport=true
 ctl_stop=true
-changelog=设置页改为下级导航，新增文件夹选择与清空按钮，修复路径映射（Windows 盘符）保存误报；表头列宽可自由拖窄并悬浮显示完整内容；重命名页方法链移到左侧、预览与执行移到顶栏；操作手册适配宽屏与手机；操作记录动作中文化；健康页改名与撤销补齐索引同步，跨窗口刷新覆盖全部页签。完整更新记录见 CHANGELOG.md。
+changelog=构建与测试稳定性修复：清零 CI lint 历史遗留报错，修复 -race 下目录移动测试的时序冲突；无功能变化，安装包行为与上一版一致。
 desktop_uidir=ui
 desktop_applaunchname=verify.Application

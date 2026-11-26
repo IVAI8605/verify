@@ -29,13 +29,26 @@ func newMoveDirEngine(t *testing.T) (*Engine, *store.Store, string) {
 	// v3.17.3（F-02）：Volumes 只接受 /vol 下的路径，测试的临时目录改走
 	// 与生产同源的扫描根环境变量（Volumes 为空时 engine.Volumes() 读它）。
 	t.Setenv("VERIFY_SCAN_ROOTS", root)
-	return New(st, cfg, NewBus(), root), st, root
+	e := New(st, cfg, NewBus(), root)
+	// New() 会启动 videoWorker / startupRecover 两个后台 goroutine，它们占用全局
+	// taskguard 的 FFmpeg 独占组；不 Close 会泄漏到后续测试，让本测试在 -race 的
+	// 慢速时序下被「视频分析正在运行」拒绝目录移动（IO 组与 FFmpeg 组互斥）。
+	t.Cleanup(func() { e.Close() })
+	return e, st, root
 }
 
 // TestMoveDirEndToEnd 覆盖 v3.14.0 的主链路：
 // 移动目录 → 索引前缀改写 → 撤销 → 索引改回。全程对真实文件系统断言。
 func TestMoveDirEndToEnd(t *testing.T) {
 	e, st, root := newMoveDirEngine(t)
+	// 本测试插入的是假 mkv，videoWorker 仍会真的跑 ffmpeg 并占住 FFmpeg 独占组；
+	// -race 下时序变慢就会与 MoveDir 的 IO 独占组冲突。本测试只验移动+索引改写，
+	// 不验闸门，故只在这里关掉它（闸门语义由 taskguard_engine_test.go 覆盖）。
+	conf := *e.cfg.Get()
+	conf.TaskGuardEnabled = false
+	if err := e.cfg.Replace(&conf); err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 
 	src := filepath.Join(root, "剧集A")

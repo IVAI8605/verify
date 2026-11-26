@@ -105,24 +105,10 @@ type watchRestartResponse struct {
 	AudioReset   bool `json:"audio_reset"`
 }
 
-// actionItemsResponse 是「动作 + 条目列表」的响应。
-//
-// 覆盖：POST /api/import/groups 之类的「先预览再执行」接口。
-type actionItemsResponse struct {
-	Action string `json:"action"`
-	Items  any    `json:"items"`
-}
-
 // countOKResponse 是「成功 + 计数」的响应。
 type countOKResponse struct {
 	OK    bool `json:"ok"`
 	Count int  `json:"count"`
-}
-
-// removedErrorsResponse 是「删除结果」的响应。
-type removedErrorsResponse struct {
-	Removed int64 `json:"removed"`
-	Errors  any   `json:"errors"`
 }
 
 // introGroupsResponse 是片头分组接口的响应。

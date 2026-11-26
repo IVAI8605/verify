@@ -45,13 +45,6 @@ type okResponse struct {
 	OK bool `json:"ok"`
 }
 
-// countResponse 是「只回一个计数」的成功响应。
-type countResponse struct {
-	OK    bool  `json:"ok"`
-	ID    int64 `json:"id,omitempty"`
-	Count int   `json:"count,omitempty"`
-}
-
 // ── 分组列表类 ──────────────────────────────────────────────────────────
 
 // groupsResponse 是「分组列表」类接口的通用响应。

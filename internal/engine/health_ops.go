@@ -508,7 +508,7 @@ func (e *Engine) TrashHealthFiles(ctx context.Context, paths []string) *HealthOp
 			// v4.1.2：复用统一回滚——原父目录若已被用户删掉，不能靠 moveFile 里的
 			// MkdirAll 把目录悄悄重建出来（等于撤销用户的一次删除）。
 			restored, note := e.rollbackTrashRecord(snap, p, dst, err)
-			msg := "记录隔离区失败：" + err.Error()
+			var msg string
 			if restored {
 				msg = "记录隔离区失败，已回滚: " + err.Error()
 			} else {

@@ -491,9 +491,9 @@ func (s *Store) DeleteHealthByIDs(ctx context.Context, ids []int64) (int64, erro
 		for _, id := range part {
 			args = append(args, id)
 		}
-		// #nosec G202 -- 拼接内容仅为 len(part) 个问号，无外部输入
+		// 拼接内容仅为 len(part) 个问号，无外部输入；SQL 主体是常量。
 		ph := strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")
-		res, err := s.db.ExecContext(ctx, `DELETE FROM health_results WHERE id IN (`+ph+`)`, args...)
+		res, err := s.db.ExecContext(ctx, `DELETE FROM health_results WHERE id IN (`+ph+`)`, args...) // #nosec G202 -- ph 只含问号与逗号
 		if err != nil {
 			return total, err
 		}

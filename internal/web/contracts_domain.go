@@ -189,12 +189,6 @@ type searchSelectionResponse struct {
 	DataVersion  int64  `json:"data_version"`
 }
 
-// searchFacetsResponse 是 GET /api/rule-search/facets 的响应。
-type searchFacetsResponse struct {
-	State  string       `json:"state"`
-	Totals rules.Totals `json:"totals"`
-}
-
 // searchNotReadyResponse 是「搜索结果未就绪」时的响应。
 //
 // v4.0.0：这是带 error 的响应，需要参与错误收敛（实现 errorPayload）。
@@ -227,39 +221,13 @@ type healthStatusResponse struct {
 	ProbeCache probeCacheResponse `json:"probe_cache"`
 }
 
-// healthResultsResponse 是 GET /api/health/results 的响应。
-type healthResultsResponse struct {
-	Kind  string `json:"kind"`
-	Total int64  `json:"total"`
-	Items any    `json:"items"`
-}
-
 // ── 标签 ────────────────────────────────────────────────────────────────
-
-// videoTagsResponse 是 GET /api/video_tags 的响应。
-type videoTagsResponse struct {
-	Tags []store.VideoTag `json:"tags"`
-}
-
-// videoTagSavedResponse 是保存视频标签后的响应。
-type videoTagSavedResponse struct {
-	OK    bool  `json:"ok"`
-	ID    int64 `json:"id"`
-	Count int64 `json:"count,omitempty"`
-	// Warning 非空表示标签已保存但重算失败（部分成功）。
-	Warning string `json:"warning,omitempty"`
-}
 
 // ── 导入 / 同步 ─────────────────────────────────────────────────────────
 
 // importSessionsResponse 是 GET /api/import/sessions 的响应。
 type importSessionsResponse struct {
 	Sessions []store.ImportSession `json:"sessions"`
-}
-
-// importSessionResponse 是 GET /api/import/sessions?id= 的响应。
-type importSessionResponse struct {
-	Session any `json:"session"`
 }
 
 // importGroupsResponse 是 GET /api/import/groups?session_id= 的响应。

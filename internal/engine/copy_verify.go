@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -257,10 +258,25 @@ func ensureFreeSpace(dir string, need int64) error {
 	if err := syscall.Statfs(dir, &sf); err != nil {
 		return nil
 	}
-	free := int64(sf.Bavail) * int64(sf.Bsize)
-	// 留 64MB 余量，避免刚好写满导致后续操作全部失败。
-	if free < need+64<<20 {
-		return fmt.Errorf("目标卷剩余空间不足：需要约 %d MB，可用 %d MB", (need+64<<20)>>20, free>>20)
+	// 在 uint64 域相乘，避免 int64 转换时的符号/溢出误判（G115）。
+	// Bsize 在 linux/amd64 是有符号类型，先判正再转；Bavail 本身是无符号块数。
+	if sf.Bsize <= 0 {
+		return nil
+	}
+	freeU64 := sf.Bavail * uint64(sf.Bsize) // #nosec G115 -- Bsize 已判正，转换不会溢出
+	// 超出 int64 表示范围的卷按「空间充足」放行：这种卷远大于任何单文件需求。
+	if freeU64 > uint64(math.MaxInt64) {
+		return nil
+	}
+	free := int64(freeU64)
+	// 留 64MB 余量，避免刚好写满导致后续操作全部失败。need 为负或超大时按充足放行，
+	// 避免出现负数加法把比较翻转成「永远不足」。
+	if need < 0 || need > int64(math.MaxInt64)-64<<20 {
+		return nil
+	}
+	want := need + 64<<20
+	if free < want {
+		return fmt.Errorf("目标卷剩余空间不足：需要约 %d MB，可用 %d MB", want>>20, free>>20)
 	}
 	return nil
 }

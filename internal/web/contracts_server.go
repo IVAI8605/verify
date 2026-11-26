@@ -102,18 +102,11 @@ type metricsResp struct {
 	Version         string  `json:"version"`
 }
 
-// toMetricsResp 把 metrics.go 的采样结果转成契约 struct（值类型，无切片/地图字段）。
+// toMetricsResp 把 metrics.go 的采样结果转成契约 struct。
+// 两个 struct 的 8 个字段顺序、类型与 json tag 完全一致，直接转换；
+// 显式列出反而触发 staticcheck S1016，且漏字段时编译器无法提醒。
 func toMetricsResp(src processMetrics) metricsResp {
-	return metricsResp{
-		PID:             src.PID,
-		UptimeSeconds:   src.UptimeSeconds,
-		CPUSecondsTotal: src.CPUSecondsTotal,
-		RSSBytes:        src.RSSBytes,
-		IOReadBytes:     src.IOReadBytes,
-		IOWriteBytes:    src.IOWriteBytes,
-		Goroutines:      src.Goroutines,
-		Version:         src.Version,
-	}
+	return metricsResp(src)
 }
 
 // diagProbeResp 是诊断里每个候选路径的探测结果（对应 fsbrowse.Diagnose 的局部 probe 类型）。

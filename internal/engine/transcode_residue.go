@@ -160,7 +160,7 @@ func (e *Engine) CleanTranscodeResidue(ctx context.Context, paths []string) (*Tr
 		if aerr := e.st.AddTrash(ctx, p, dst, vol, "", "", "transcode_residue", fi.Size()); aerr != nil {
 			// v4.1.2：复用统一回滚，原父目录已不存在时不重建（见 rollbackTrashRecord）。
 			restored, note := e.rollbackTrashRecord(snap, p, dst, aerr)
-			msg := "记录隔离区失败：" + aerr.Error()
+			var msg string
 			if restored {
 				msg = "记录隔离区失败，已回滚：" + aerr.Error()
 			} else {
