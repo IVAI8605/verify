@@ -139,6 +139,12 @@ func typedPayload(cmd Command, params map[string]string) ([]byte, error) {
 			} else {
 				payload[k] = v
 			}
+		case "float":
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				payload[k] = f
+			} else {
+				payload[k] = v
+			}
 		case "json":
 			if json.Valid([]byte(v)) {
 				payload[k] = json.RawMessage(v)

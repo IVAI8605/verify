@@ -164,6 +164,93 @@ func TestSettingsArrayAndObjectFields(t *testing.T) {
 	}
 }
 
+// TestSettingsAudioThresholdSendsFloat 守 settings.audio_threshold（服务端 *float64）以真浮点进 body。
+func TestSettingsAudioThresholdSendsFloat(t *testing.T) {
+	cmd, ok := findCommand("settings")
+	if !ok {
+		t.Fatal("找不到命令 settings")
+	}
+	if typ := paramType(cmd, "audio_threshold"); typ != "float" {
+		t.Fatalf("settings.audio_threshold 类型应为 float，实际 %q", typ)
+	}
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("解析请求体失败：%v", err)
+		}
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "test-token")
+	if _, _, err := c.Do(context.Background(), cmd, map[string]string{"audio_threshold": "2.5"}); err != nil {
+		t.Fatalf("Do 失败：%v", err)
+	}
+	f, ok := got["audio_threshold"].(float64)
+	if !ok || f != 2.5 {
+		t.Fatalf("audio_threshold 未以浮点发送：%T %#v", got["audio_threshold"], got["audio_threshold"])
+	}
+}
+
+// TestSearchSelectionLimitSendsInt 守 search selection.limit（服务端 int）以真整数进 body。
+func TestSearchSelectionLimitSendsInt(t *testing.T) {
+	cmd, ok := findCommand("search selection")
+	if !ok {
+		t.Fatal("找不到命令 search selection")
+	}
+	for _, name := range []string{"limit", "offset", "min_size"} {
+		if typ := paramType(cmd, name); typ != "int" {
+			t.Errorf("search selection.%s 类型应为 int，实际 %q", name, typ)
+		}
+	}
+	if typ := paramType(cmd, "case"); typ != "bool" {
+		t.Errorf("search selection.case 类型应为 bool，实际 %q", typ)
+	}
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("解析请求体失败：%v", err)
+		}
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "test-token")
+	if _, _, err := c.Do(context.Background(), cmd, map[string]string{
+		"limit": "25", "offset": "10", "case": "true",
+	}); err != nil {
+		t.Fatalf("Do 失败：%v", err)
+	}
+	if n, ok := got["limit"].(float64); !ok || n != 25 {
+		t.Fatalf("limit 未以整数发送：%T %#v", got["limit"], got["limit"])
+	}
+	if b, ok := got["case"].(bool); !ok || !b {
+		t.Fatalf("case 未以布尔发送：%T %#v", got["case"], got["case"])
+	}
+}
+
+// TestHealthUndoSendsIntTaskID 守 health undo.task_id（服务端 int64）以真整数进 body。
+func TestHealthUndoSendsIntTaskID(t *testing.T) {
+	cmd, ok := findCommand("health undo")
+	if !ok {
+		t.Fatal("找不到命令 health undo")
+	}
+	if typ := paramType(cmd, "task_id"); typ != "int" {
+		t.Fatalf("health undo.task_id 类型应为 int，实际 %q", typ)
+	}
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "test-token")
+	if _, _, err := c.Do(context.Background(), cmd, map[string]string{"task_id": "42"}); err != nil {
+		t.Fatalf("Do 失败：%v", err)
+	}
+	if n, ok := got["task_id"].(float64); !ok || n != 42 {
+		t.Fatalf("task_id 未以整数发送：%T %#v", got["task_id"], got["task_id"])
+	}
+}
+
 // paramType 返回命令里某参数声明的类型，找不到返回空串。
 func paramType(cmd Command, name string) string {
 	for _, p := range cmd.Params {
