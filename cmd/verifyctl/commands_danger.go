@@ -60,9 +60,15 @@ func runDangerCommand(ctx context.Context, c *Client, cmd Command, params map[st
 		method = http.MethodGet
 	}
 
+	// 只带 --confirm-token 却不带 --yes（且非显式 --dry-run）：这是不完整的执行意图，
+	// 按用法错误拒绝，避免脚本把「退 0 + would_do」误判为操作已生效（brief：缺一即退出码 2）。
+	if params["__cli_dry_run"] != "true" && params["__cli_yes"] != "true" && confirmToken != "" {
+		return nil, &usageError{msg: "已提供 --confirm-token 但缺少 --yes：危险操作执行必须同时带 --yes 与 --confirm-token"}
+	}
+
 	// 默认 dry-run（含显式 --dry-run）：回 would_do 并附带本次可用的确认令牌。
 	if params["__cli_dry_run"] == "true" || params["__cli_yes"] != "true" {
-		return marshalDangerDryRun(cmd.Name, method, effectivePath(cmd, request), request, params["pretty"] == "true")
+		return marshalDangerDryRun(cmd, method, effectivePath(cmd, request), request, params["pretty"] == "true")
 	}
 
 	// 到这里说明用户确实要执行（--yes），必须再拿确认令牌核对。
@@ -82,7 +88,10 @@ func runDangerCommand(ctx context.Context, c *Client, cmd Command, params map[st
 }
 
 // marshalDangerDryRun 把将执行的命令信息与确认令牌编码成回包；控制/内部参数不进回包。
-func marshalDangerDryRun(name, method, path string, request map[string]string, pretty bool) ([]byte, error) {
+// 令牌用 cmd 的模板身份（cmd.Path，如 /api/rename/presets/）计算，与执行时
+// makeConfirmToken(cmd, params) 完全同口径；displayPath 只做 would_do.path 展示（已代入
+// 路径参数，如 /api/rename/presets/7），绝不参与令牌哈希，否则带 PathParams 的命令有效令牌必被拒。
+func marshalDangerDryRun(cmd Command, method, displayPath string, request map[string]string, pretty bool) ([]byte, error) {
 	clean := make(map[string]string, len(request))
 	for k, v := range request {
 		if isInternalParam(k) {
@@ -93,13 +102,13 @@ func marshalDangerDryRun(name, method, path string, request map[string]string, p
 	out, err := json.Marshal(dangerDryRunResult{
 		DryRun: true,
 		WouldDo: wouldDo{
-			Command: name,
+			Command: cmd.Name,
 			Method:  method,
-			Path:    path,
+			Path:    displayPath,
 			Params:  clean,
 		},
-		// 令牌只基于命令身份 + 业务参数 + 时间片，与执行时校验口径一致。
-		ConfirmToken: makeConfirmToken(Command{Name: name, Path: path, Method: method}, clean),
+		// 令牌只基于命令模板身份 + 业务参数 + 时间片，与执行时校验口径一致。
+		ConfirmToken: makeConfirmToken(cmd, clean),
 	})
 	if err != nil {
 		return nil, &commandHTTPError{Detail: &ErrDetail{Message: "序列化 dry-run 结果失败"}}

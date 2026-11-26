@@ -231,3 +231,120 @@ func TestDangerCLIFlow(t *testing.T) {
 		t.Fatal("正确令牌应发请求")
 	}
 }
+
+// TestDangerPathParamTokenMatchesExecute（C1 回归）验证带 PathParams 的破坏性命令
+// （rename preset delete，path 模板 /api/rename/presets/）dry-run 签发的令牌能直接用于执行：
+// 令牌必须基于 cmd.Path 模板而非 effectivePath，否则有效令牌必被判「不匹配或已过期」。
+func TestDangerPathParamTokenMatchesExecute(t *testing.T) {
+	var gotPath string
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		gotPath = r.URL.Path
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "t")
+	cmd, ok := findCommand("rename preset delete")
+	if !ok {
+		t.Fatal("注册表缺少 rename preset delete")
+	}
+	if len(cmd.PathParams) == 0 || cmd.PathParams[0] != "id" {
+		t.Fatalf("rename preset delete 应声明 PathParams=[id]，实际 %v", cmd.PathParams)
+	}
+
+	// dry-run：would_do.path 应代入 id，但令牌基于模板身份
+	dry, err := runDangerCommand(context.Background(), c, cmd, map[string]string{"id": "7"}, "")
+	if err != nil {
+		t.Fatalf("dry-run 失败：%v", err)
+	}
+	var got struct {
+		WouldDo struct {
+			Path string `json:"path"`
+		} `json:"would_do"`
+		ConfirmToken string `json:"confirm_token"`
+	}
+	if err := json.Unmarshal(dry, &got); err != nil {
+		t.Fatalf("dry-run 不是合法 JSON：%v（%s）", err, dry)
+	}
+	if got.WouldDo.Path != "/api/rename/presets/7" {
+		t.Fatalf("would_do.path 应代入 id，实际 %q", got.WouldDo.Path)
+	}
+
+	// 用 dry-run 刚签发的令牌执行：必须放行并真正请求到 /api/rename/presets/7
+	out, err := runDangerCommand(context.Background(), c, cmd, map[string]string{
+		"id": "7", "__cli_yes": "true", "confirm_token": got.ConfirmToken,
+	}, got.ConfirmToken)
+	if err != nil {
+		t.Fatalf("路径参数命令的有效令牌被拒（C1 回归）：%v", err)
+	}
+	if !called || gotPath != "/api/rename/presets/7" {
+		t.Fatalf("应请求 /api/rename/presets/7，called=%v path=%q 输出=%s", called, gotPath, out)
+	}
+}
+
+// TestDangerConfirmTokenWithoutYesRejected（I1 回归）验证只带 --confirm-token 不带 --yes 时
+// 按用法错误拒绝（不发请求），而不是静默按 dry-run 退 0。
+func TestDangerConfirmTokenWithoutYesRejected(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "t")
+	cmd := Command{Name: "trash empty", Path: "/api/trash/empty", Method: "POST", SideEffect: "destructive"}
+
+	// 先拿一个「合法」令牌
+	dry, err := runDangerCommand(context.Background(), c, cmd, nil, "")
+	if err != nil {
+		t.Fatalf("dry-run 失败：%v", err)
+	}
+	token := confirmTokenFromDryRun(t, dry)
+
+	// 只带令牌、不带 --yes：必须报用法错误且不发请求
+	if _, err := runDangerCommand(context.Background(), c, cmd, map[string]string{"confirm_token": token}, token); err == nil {
+		t.Fatal("只带 --confirm-token 不带 --yes 应报用法错误")
+	}
+	if called {
+		t.Fatal("只带 --confirm-token 不带 --yes 不应发请求")
+	}
+
+	// 显式 --dry-run + 令牌：仍应 dry-run（不报错、不发请求）
+	if _, err := runDangerCommand(context.Background(), c, cmd, map[string]string{"__cli_dry_run": "true", "confirm_token": token}, token); err != nil {
+		t.Fatalf("显式 --dry-run 带令牌不应报错：%v", err)
+	}
+	if called {
+		t.Fatal("显式 --dry-run 不应发请求")
+	}
+}
+
+// TestDangerCLIConfirmTokenWithoutYesExit2（I1 回归，走完整 run()）验证
+// `trash empty --confirm-token <token>`（无 --yes）退出码 2 且不发请求。
+func TestDangerCLIConfirmTokenWithoutYesExit2(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	var dry bytes.Buffer
+	if code := run([]string{"--url", srv.URL, "--token", "t", "trash", "empty"}, &dry); code != 0 {
+		t.Fatalf("dry-run 退出码=%d，输出=%s", code, dry.String())
+	}
+	var env struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(dry.Bytes(), &env); err != nil {
+		t.Fatalf("信封解析失败：%v（%s）", err, dry.String())
+	}
+	token := confirmTokenFromDryRun(t, env.Data)
+
+	var buf bytes.Buffer
+	if code := run([]string{"--url", srv.URL, "--token", "t", "trash", "empty", "--confirm-token", token}, &buf); code != 2 {
+		t.Fatalf("只带 --confirm-token 不带 --yes 退出码应=2，实际=%d，输出=%s", code, buf.String())
+	}
+	if called {
+		t.Fatal("只带 --confirm-token 不带 --yes 不应发请求")
+	}
+}
