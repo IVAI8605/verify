@@ -51,11 +51,11 @@ func TestGlobalFlagsAccepted(t *testing.T) {
 	}
 }
 
-// TestRegisteredCommandNotExecuted 验证已登记但执行尚未接入的命令返回非 0 并给出中文提示，
-// 防止脚本把「退出码 0 + 空输出」误判为操作已生效（destructive 命令尤其危险）。
+// TestRegisteredCommandNotExecuted 验证非只读类命令（此处用 trigger 类的 scan）返回非 0
+// 并给出中文提示，防止脚本把「退出码 0 + 空输出」误判为操作已生效（destructive 命令尤其危险）。
 func TestRegisteredCommandNotExecuted(t *testing.T) {
 	var buf bytes.Buffer
-	code := run([]string{"status"}, &buf)
+	code := run([]string{"scan"}, &buf)
 	if code == 0 {
 		t.Fatalf("已登记但执行尚未接入的命令不应返回 0；输出=%q", buf.String())
 	}

@@ -67,6 +67,11 @@ func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) 
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
+	// /api/auth/token 强制要求同源页面标记（SEC-3），CLI 与前端一致地带上；
+	// 只针对该路由设置，避免给其它接口引入额外语义。
+	if cmd.Path == "/api/auth/token" {
+		req.Header.Set("X-Requested-With", "verify")
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
