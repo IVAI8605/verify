@@ -239,6 +239,8 @@ bash scripts/build-fpk.sh
 
 本节混着两类条目，必须区分：`[现状]` 描述代码当前行为，可被 `scripts/check-agents-md.sh` 核验；`[要求]` 是对后续改动的约束，没有对应实现，不要当成已做到。
 
+**上架依据**：飞牛应用开放平台《应用入口 › 鉴权和安全》（developer.fnnas.com/docs/core-concepts/app-entry/）要求「网关校验登录态、应用执行业务权限」：用户只能访问自己的数据、管理接口需管理员身份、高风险操作需明确权限检查、文件路径与记录 ID 结合当前用户校验，且文件访问要标准化路径、拒绝 `..`、只从预期目录提供、不暴露密钥/数据库/配置/私有日志。本项目是单用户 NAS 工具（无多用户数据模型），令牌即管理凭据；2026-11-26 上架前逐条核对，下方 `[现状]` 条目即对应这些要求的实现，改动时不得放宽。
+
 - [现状] 应用可能无鉴权运行在局域网内；`AccessToken` 为空表示不登录
 - [现状] 令牌比较统一走 `internal/webauth.TokenEqual`：两侧先 SHA-256 再 `subtle.ConstantTimeCompare`，同时避免时序旁路和长度泄露
 - [现状] 登录 Cookie 保存的是 `internal/webauth.CookieValue(token)` 派生值，不含明文令牌；令牌变更后旧 Cookie 自动失效

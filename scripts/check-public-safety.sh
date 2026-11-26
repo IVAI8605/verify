@@ -375,7 +375,8 @@ selftest() {
 	printf 'tok = %s%s\n' "ghp_" "abcdefghijklmnopqrstuvwxyz0123" >"$d/token.txt"
 	printf '账号：%s\n' "123456789" >"$d/acct.txt"
 	printf 'x = "%s." + "%s.1.1"\n' "$A" "$B" >"$d/split.txt"
-	printf '// 旧部署在 %s.%s.95.100 上\n' "$A" "$B" >"$d/comment.txt"
+	# 用通用占位内网地址，避免把维护者真实 IP 写进仓库（自测仍需命中 ip-private 规则）
+	printf '// 旧部署在 %s.%s.1.100 上\n' "$A" "$B" >"$d/comment.txt"
 	printf '{"k":"%s"}\n' "$(printf '%s.%s.1.90' "$A" "$B" | base64 -w0)" >"$d/b64.txt"
 	printf 'key 放在 %s 里\n' "id_rsa" >"$d/credfile.txt"
 	printf '账号：%s\n' "123456789" | iconv -f UTF-8 -t GB18030 >"$d/gb18030.txt" 2>/dev/null || : >"$d/gb18030.txt"
