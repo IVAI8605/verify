@@ -336,3 +336,96 @@ func TestTableFormatIgnoredForBinary(t *testing.T) {
 		t.Fatalf("导出类响应被 --format 改写：%q", out)
 	}
 }
+
+// TestTableListKeysRenderTables 守回归：白名单补齐后，原本被漏的确定性列表键
+// （log / tags / entries 等）必须真的出表，而不是静默退回 JSON。
+func TestTableListKeysRenderTables(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		wantHdr []string // 表头应包含的列名
+		wantVal string   // 表体应出现的值
+	}{
+		{
+			name:    "trim log → log",
+			raw:     `{"log":[{"path":"/a.mp4","offset":10},{"path":"/b.mp4","offset":20}]}`,
+			wantHdr: []string{"path", "offset"},
+			wantVal: "/b.mp4",
+		},
+		{
+			name:    "video_tags → tags",
+			raw:     `{"tags":[{"id":1,"name":"动作"},{"id":2,"name":"喜剧"}]}`,
+			wantHdr: []string{"id", "name"},
+			wantVal: "喜剧",
+		},
+		{
+			// fs list 同时带 roots（[]string）与 entries（对象数组）：
+			// 必须选 entries，且字符串数组 roots 不能抢先命中。
+			name:    "fs list → entries（跳过 roots 字符串数组）",
+			raw:     `{"path":"/","roots":["/vol1","/vol2"],"entries":[{"name":"a","size":1},{"name":"b","size":2}]}`,
+			wantHdr: []string{"name", "size"},
+			wantVal: "b",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := writeTableResult(&buf, json.RawMessage(c.raw)); err != nil {
+				t.Fatalf("渲染失败：%v", err)
+			}
+			out := buf.String()
+			if json.Valid([]byte(out)) && strings.HasPrefix(strings.TrimSpace(out), "{") {
+				t.Fatalf("应出表却退回了 JSON：\n%s", out)
+			}
+			header := strings.SplitN(out, "\n", 2)[0]
+			for _, h := range c.wantHdr {
+				if !strings.Contains(header, h) {
+					t.Errorf("表头缺列 %q：%q", h, header)
+				}
+			}
+			if !strings.Contains(out, c.wantVal) {
+				t.Errorf("表体缺值 %q：\n%s", c.wantVal, out)
+			}
+		})
+	}
+}
+
+// TestTableAllWhitelistKeysRecognized 守白名单完整性：每个 tableArrayKeys 里的键，
+// 只要值是对象数组就必须被认成表格（防止以后再加键忘了或写错名字）。
+func TestTableAllWhitelistKeysRecognized(t *testing.T) {
+	raw := `[{"k":"v1"},{"k":"v2"}]`
+	for _, key := range tableArrayKeys {
+		body := `{"` + key + `":` + raw + `}`
+		var buf bytes.Buffer
+		if err := writeTableResult(&buf, json.RawMessage(body)); err != nil {
+			t.Fatalf("%s：渲染失败 %v", key, err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "k") || !strings.Contains(out, "v2") {
+			t.Errorf("白名单键 %s 未被识别为表格：\n%s", key, out)
+		}
+	}
+}
+
+// TestFindArrayFieldSkipsStringArrays 单测 findArrayField 的加固：
+//   - 只有字符串数组（如 roots []string）时，必须返回未命中（跳过），而不是把它当表格；
+//     否则 renderTable 会对字符串数组错误地走到 asObjectSlice 失败→JSON 回退前先「假命中」。
+//   - 字符串数组与对象数组并存时，取对象数组。
+func TestFindArrayFieldSkipsStringArrays(t *testing.T) {
+	// 只有字符串数组：白名单键 roots 命中但应被跳过 → 未命中。
+	if arr, ok := findArrayField(map[string]any{"roots": []any{"/vol1", "/vol2"}}); ok {
+		t.Fatalf("字符串数组不应被当成表格：%#v", arr)
+	}
+	// 字符串数组 + 对象数组并存：必须取对象数组（entries）。
+	obj := map[string]any{
+		"roots":   []any{"/vol1", "/vol2"},
+		"entries": []any{map[string]any{"name": "a"}, map[string]any{"name": "b"}},
+	}
+	arr, ok := findArrayField(obj)
+	if !ok {
+		t.Fatal("应选中 entries 对象数组")
+	}
+	if objs, ok := asObjectSlice(arr); !ok || len(objs) != 2 {
+		t.Fatalf("选中的不是 entries 对象数组：%#v", arr)
+	}
+}

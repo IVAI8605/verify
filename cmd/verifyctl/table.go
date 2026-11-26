@@ -17,6 +17,17 @@ import (
 var tableArrayKeys = []string{
 	"items", "groups", "plans", "batches", "history", "runs", "files",
 	"results", "sessions", "peers", "candidates", "jobs", "tasks", "snapshots",
+	// 其它命令的确定性列表主键（逐一核对过契约确为对象数组）：
+	"log",          // trim log → contracts_domain.go trimLogResponse
+	"tags",         // video_tags → contracts_rest.go tagsResponse
+	"entries",      // fs list → contracts_rest.go fsListResponse
+	"probes",       // diag authz → contracts_server.go Probes
+	"fs_view",      // diag authz → contracts_server.go FSView
+	"top_prefixes", // retain pref stats/profile → contracts_engine_health.go
+	"presets",      // rename presets → contracts_rename.go renamePresetsResponse
+	"types",        // rule-search facets → snapshotFacetsResponse Types（[]typeFacet）
+	"dirs",         // rule-search facets → snapshotFacetsResponse Dirs（[]dirFacet）
+	"roots",        // fs list → []string，非对象数组；findArrayField 会跳过，加了无害
 }
 
 // tableCellMaxRunes 单元格最多保留的字符数，超出截断并加省略号，避免宽字段撑破终端。
@@ -74,15 +85,24 @@ func asObjectSlice(arr []any) ([]map[string]any, bool) {
 	return objs, true
 }
 
-// findArrayField 只按 tableArrayKeys 白名单顺序找第一个对象数组。
-// 刻意不做「任意数组」兜底：那等于替用户挑字段，会静默丢掉其余字段。
+// findArrayField 只按 tableArrayKeys 白名单顺序找第一个「对象数组」。
+//   - 不做「任意数组」兜底：那等于替用户挑字段，会静默丢掉其余字段（I2）。
+//   - 跳过非对象数组（如 fs list 的 roots 是 []string）：否则字符串数组会抢先命中，
+//     使真正的对象数组（entries）落到 JSON 回退——白名单里加了字符串键也无害。
 func findArrayField(obj map[string]any) ([]any, bool) {
 	for _, key := range tableArrayKeys {
-		if raw, ok := obj[key]; ok {
-			if arr, ok := raw.([]any); ok {
-				return arr, true
-			}
+		raw, ok := obj[key]
+		if !ok {
+			continue
 		}
+		arr, ok := raw.([]any)
+		if !ok {
+			continue
+		}
+		if _, isObjects := asObjectSlice(arr); !isObjects {
+			continue
+		}
+		return arr, true
 	}
 	return nil, false
 }
