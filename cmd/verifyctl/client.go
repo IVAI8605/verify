@@ -6,12 +6,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// multipartFileParam 是 multipart 上传命令里代表「本地文件路径」的参数名。
+// 约定：Command.Multipart 为真时，该参数的值按本地路径读取为文件部件，其余参数作为表单字段。
+const multipartFileParam = "file"
 
 // Client 是 verifyctl 的轻量 HTTP 客户端。
 // Token 只进 Authorization: Bearer，绝不写进 URL、日志或错误文案。
@@ -30,10 +37,13 @@ func NewClient(baseURL, token string) *Client {
 	}
 }
 
-// Do 按 cmd.Method 组装请求：GET/HEAD/DELETE 把参数编码进 query，
-// POST/PUT/PATCH 按注册表里的 Param.Type 转成 JSON 字段。
-// 内部保留 key（__cli_*）与入口层控制参数在 query 与 body 两路都剔除，
-// 业务 dry_run 等真实参数不受影响。
+// Do 按 cmd.Method 与命令的传输声明组装请求：
+//   - 路径参数（cmd.PathParams）按声明顺序拼到 Path 末尾并从其余两路剔除；
+//   - GET/HEAD/DELETE 默认把参数编码进 query；POST/PUT/PATCH 默认进 JSON body；
+//   - cmd.QueryParams 里的参数即使非 GET 方法也强制走 query（如 video_tags recompute?id=）；
+//   - cmd.Multipart 为真时以 multipart/form-data 上传：multipartFileParam 按本地路径读文件，其余为表单字段。
+//
+// 内部保留 key（__cli_*）与入口层控制参数在 query 与 body 两路都剔除，业务 dry_run 等真实参数不受影响。
 // 返回原始响应体与 HTTP 状态码；网络错误时状态码为 0，由调用方映射到退出码 4。
 func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) ([]byte, int, error) {
 	request := make(map[string]string, len(params))
@@ -48,26 +58,84 @@ func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) 
 	if method == "" {
 		method = http.MethodGet
 	}
-	target := c.BaseURL + cmd.Path
 
-	var body io.Reader
-	if usesQuery(method) {
-		q := url.Values{}
-		for k, v := range request {
-			if v == "" {
-				continue
-			}
-			q.Set(k, v)
+	// 路径参数：拼到 Path 末尾并移出 query/body 两路。
+	target := c.BaseURL + cmd.Path
+	for _, name := range cmd.PathParams {
+		if v, ok := request[name]; ok && v != "" {
+			target += v
+			delete(request, name)
 		}
-		if len(q) > 0 {
+	}
+
+	// 非 GET 方法也需走查询串的参数集合。
+	queryKeys := make(map[string]bool, len(cmd.QueryParams))
+	for _, name := range cmd.QueryParams {
+		queryKeys[name] = true
+	}
+
+	// 拆分到 query / body / file 三路。
+	q := url.Values{}
+	bodyParams := make(map[string]string, len(request))
+	var filePath string
+	for k, v := range request {
+		switch {
+		case usesQuery(method) || queryKeys[k]:
+			if v != "" {
+				q.Set(k, v)
+			}
+		case cmd.Multipart && k == multipartFileParam:
+			filePath = v
+		default:
+			bodyParams[k] = v
+		}
+	}
+	if len(q) > 0 {
+		if strings.Contains(target, "?") {
+			target += "&" + q.Encode()
+		} else {
 			target += "?" + q.Encode()
 		}
-	} else {
-		payload, err := typedPayload(cmd, request)
+	}
+
+	var body io.Reader
+	contentType := ""
+	if cmd.Multipart {
+		buf := &bytes.Buffer{}
+		mw := multipart.NewWriter(buf)
+		for k, v := range bodyParams {
+			if err := mw.WriteField(k, v); err != nil {
+				return nil, 0, fmt.Errorf("编码表单字段失败（%v）", err)
+			}
+		}
+		if filePath != "" {
+			f, err := os.Open(filePath)
+			if err != nil {
+				return nil, 0, fmt.Errorf("打开上传文件失败（%v）", err)
+			}
+			part, perr := mw.CreateFormFile(multipartFileParam, filepath.Base(filePath))
+			if perr != nil {
+				f.Close()
+				return nil, 0, fmt.Errorf("构造上传字段失败（%v）", perr)
+			}
+			if _, cerr := io.Copy(part, f); cerr != nil {
+				f.Close()
+				return nil, 0, fmt.Errorf("读取上传文件失败（%v）", cerr)
+			}
+			f.Close()
+		}
+		if err := mw.Close(); err != nil {
+			return nil, 0, fmt.Errorf("收尾上传请求失败（%v）", err)
+		}
+		body = buf
+		contentType = mw.FormDataContentType()
+	} else if !usesQuery(method) {
+		payload, err := typedPayload(cmd, bodyParams)
 		if err != nil {
 			return nil, 0, fmt.Errorf("编码请求体失败（%v）", err)
 		}
 		body = bytes.NewReader(payload)
+		contentType = "application/json"
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, target, body)
@@ -82,8 +150,8 @@ func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) 
 	if cmd.Path == "/api/auth/token" {
 		req.Header.Set("X-Requested-With", "verify")
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 
 	hc := c.HTTP
@@ -101,6 +169,17 @@ func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) 
 		return nil, resp.StatusCode, fmt.Errorf("读取 %s 响应失败（%v）", cmd.Path, err)
 	}
 	return raw, resp.StatusCode, nil
+}
+
+// effectivePath 返回代入了路径参数后的实际请求路径，供 dry-run 的 would_do 展示。
+func effectivePath(cmd Command, params map[string]string) string {
+	p := cmd.Path
+	for _, name := range cmd.PathParams {
+		if v := params[name]; v != "" {
+			p += v
+		}
+	}
+	return p
 }
 
 // usesQuery 判断参数走 URL 查询串还是 JSON 请求体。

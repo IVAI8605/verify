@@ -15,6 +15,10 @@ type commandInfo struct {
 	Params          []Param `json:"params"`
 	SideEffect      string  `json:"side_effect"`
 	ConfirmRequired bool    `json:"confirm_required"`
+	// 以下为传输声明，供调用方/AI 自描述：哪些参数走 URL 路径段、哪些非 GET 也走查询串、是否 multipart 上传。
+	PathParams  []string `json:"path_params,omitempty"`
+	QueryParams []string `json:"query_params,omitempty"`
+	Multipart   bool     `json:"multipart,omitempty"`
 }
 
 // newCommandInfo 由注册项生成自描述条目；description 暂用方法+接口兜底，
@@ -28,6 +32,9 @@ func newCommandInfo(cmd Command) commandInfo {
 		Params:          cmd.Params,
 		SideEffect:      cmd.SideEffect,
 		ConfirmRequired: cmd.Confirm,
+		PathParams:      cmd.PathParams,
+		QueryParams:     cmd.QueryParams,
+		Multipart:       cmd.Multipart,
 	}
 }
 

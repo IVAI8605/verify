@@ -20,13 +20,21 @@ type Param struct {
 // 并在函数体内做 c.(*Client) 断言；这是本任务产出的权威接口。
 // 本任务只登记条目，不实现 Run；Run 的填充由 Task 6/8/9/10 完成。
 type Command struct {
-	Name       string                                                                `json:"name"`
-	Path       string                                                                `json:"path"`
-	Method     string                                                                `json:"method"`
-	Params     []Param                                                               `json:"params"`
-	SideEffect string                                                                `json:"side_effect"`
-	Confirm    bool                                                                  `json:"confirm_required"`
-	Run        func(ctx context.Context, c any, args map[string]string) (any, error) `json:"-"`
+	Name       string  `json:"name"`
+	Path       string  `json:"path"`
+	Method     string  `json:"method"`
+	Params     []Param `json:"params"`
+	SideEffect string  `json:"side_effect"`
+	Confirm    bool    `json:"confirm_required"`
+	// PathParams 列出按声明顺序拼接到 Path 末尾的参数名（服务端从 URL 路径段读，如
+	// /api/rename/presets/{id}）。这些参数既不进 query 也不进 body。
+	PathParams []string `json:"path_params,omitempty"`
+	// QueryParams 列出即使非 GET 方法也必须走查询串的参数名（如 POST /api/video_tags/recompute?id=）。
+	QueryParams []string `json:"query_params,omitempty"`
+	// Multipart 为真表示以 multipart/form-data 上传：名为 file 的参数按本地路径读为文件部件，
+	// 其余参数作为表单字段（如 POST /api/import）。
+	Multipart bool                                                                  `json:"multipart,omitempty"`
+	Run       func(ctx context.Context, c any, args map[string]string) (any, error) `json:"-"`
 }
 
 // Commands 是全量命令表：逐条对应 internal/web/server.go 注册的非静态路由，
@@ -60,8 +68,8 @@ var Commands = []Command{
 	{Name: "file rename", Path: "/api/file/rename", Method: "POST", Params: []Param{{"path", "string", false, ""}, {"name", "string", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "trim", Path: "/api/trim", Method: "POST", Params: []Param{{"jobs", "json", true, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "trim log", Path: "/api/trim/log", Method: "GET", Params: []Param{{"limit", "int", false, ""}}, SideEffect: "none", Confirm: false},
-	{Name: "trim probe", Path: "/api/trim/probe", Method: "POST", Params: []Param{{"group_key", "string", true, ""}, {"paths", "json", true, ""}}, SideEffect: "none", Confirm: false},
-	{Name: "transcode", Path: "/api/transcode", Method: "POST", Params: []Param{{"max_res", "string", false, ""}}, SideEffect: "write", Confirm: false},
+	{Name: "trim probe", Path: "/api/trim/probe", Method: "POST", Params: []Param{{"group_key", "string", true, ""}, {"paths", "json", true, ""}, {"durations", "json", false, ""}, {"threshold", "float", false, ""}}, SideEffect: "none", Confirm: false},
+	{Name: "transcode", Path: "/api/transcode", Method: "POST", Params: []Param{{"paths", "json", true, ""}, {"quality", "string", false, "balanced"}, {"max_res", "string", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "transcode status", Path: "/api/transcode/status", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "tasks pause", Path: "/api/tasks/pause", Method: "POST", Params: nil, SideEffect: "trigger", Confirm: false},
 	{Name: "tasks resume", Path: "/api/tasks/resume", Method: "POST", Params: nil, SideEffect: "trigger", Confirm: false},
@@ -74,13 +82,13 @@ var Commands = []Command{
 	{Name: "groups folder", Path: "/api/groups/folder", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "groups fuzzy", Path: "/api/groups/fuzzy", Method: "GET", Params: []Param{{"near", "string", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "folder_rename preview", Path: "/api/folder_rename/preview", Method: "POST", Params: []Param{{"dir", "string", false, ""}, {"prefix_a", "bool", false, "false"}}, SideEffect: "none", Confirm: false},
-	{Name: "folder_rename", Path: "/api/folder_rename", Method: "POST", Params: []Param{{"prefix_a", "bool", false, "false"}}, SideEffect: "write", Confirm: false},
+	{Name: "folder_rename", Path: "/api/folder_rename", Method: "POST", Params: []Param{{"dir", "string", true, ""}, {"prefix_a", "bool", false, "false"}}, SideEffect: "write", Confirm: false},
 	{Name: "folder_rename undo", Path: "/api/folder_rename/undo", Method: "POST", Params: []Param{{"task_id", "int", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "groups semantic", Path: "/api/groups/semantic", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "video_tags", Path: "/api/video_tags", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "video_tags add", Path: "/api/video_tags", Method: "POST", Params: []Param{{"name", "string", true, ""}, {"match_mode", "string", false, ""}, {"value_source", "string", false, ""}, {"value_pattern", "string", false, ""}, {"join_group", "bool", false, "true"}, {"sort_order", "int", false, "0"}}, SideEffect: "write", Confirm: false},
 	{Name: "video_tags delete", Path: "/api/video_tags", Method: "DELETE", Params: []Param{{"id", "int", true, ""}}, SideEffect: "destructive", Confirm: true},
-	{Name: "video_tags recompute", Path: "/api/video_tags/recompute", Method: "POST", Params: []Param{{"id", "string", false, ""}}, SideEffect: "trigger", Confirm: false},
+	{Name: "video_tags recompute", Path: "/api/video_tags/recompute", Method: "POST", Params: []Param{{"id", "string", false, ""}}, QueryParams: []string{"id"}, SideEffect: "trigger", Confirm: false},
 	{Name: "groups tag", Path: "/api/groups/tag", Method: "GET", Params: []Param{{"tag_id", "int", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "search", Path: "/api/search", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "search selection", Path: "/api/search/selection", Method: "POST", Params: []Param{{"q", "string", false, ""}, {"mode", "string", false, ""}, {"case", "bool", false, ""}, {"ext", "string", false, ""}, {"min_size", "int", false, ""}, {"max_size", "int", false, ""}, {"since_ms", "int", false, ""}, {"until_ms", "int", false, ""}, {"dir", "string", false, ""}, {"sort", "string", false, ""}, {"order", "string", false, ""}, {"token", "string", false, ""}, {"offset", "int", false, ""}, {"limit", "int", false, ""}, {"excludes", "json", false, ""}}, SideEffect: "write", Confirm: false},
@@ -97,9 +105,9 @@ var Commands = []Command{
 	{Name: "rename batches recent", Path: "/api/rename/batches/recent", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "rename undo", Path: "/api/rename/undo/", Method: "POST", Params: nil, SideEffect: "destructive", Confirm: true},
 	{Name: "rename batches unfinished", Path: "/api/rename/batches/unfinished", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
-	{Name: "rename presets", Path: "/api/rename/presets", Method: "POST", Params: nil, SideEffect: "write", Confirm: false},
-	{Name: "rename preset delete", Path: "/api/rename/presets/", Method: "DELETE", Params: nil, SideEffect: "destructive", Confirm: true},
-	{Name: "rename preset update", Path: "/api/rename/presets/", Method: "PUT", Params: []Param{{"id", "int", true, ""}, {"name", "string", false, ""}, {"description", "string", false, ""}, {"methods", "string", false, ""}}, SideEffect: "write", Confirm: false},
+	{Name: "rename presets", Path: "/api/rename/presets", Method: "POST", Params: []Param{{"name", "string", true, ""}, {"description", "string", false, ""}, {"methods", "string", true, ""}}, SideEffect: "write", Confirm: false},
+	{Name: "rename preset delete", Path: "/api/rename/presets/", Method: "DELETE", Params: []Param{{"id", "int", true, ""}}, PathParams: []string{"id"}, SideEffect: "destructive", Confirm: true},
+	{Name: "rename preset update", Path: "/api/rename/presets/", Method: "PUT", Params: []Param{{"id", "int", true, ""}, {"name", "string", true, ""}, {"description", "string", false, ""}, {"methods", "string", true, ""}}, PathParams: []string{"id"}, SideEffect: "write", Confirm: false},
 	{Name: "video cropdetect", Path: "/api/video/cropdetect", Method: "POST", Params: []Param{{"limit", "int", false, ""}}, SideEffect: "trigger", Confirm: false},
 	{Name: "retain score", Path: "/api/retain/score", Method: "POST", Params: []Param{{"groups", "json", true, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "retain pref", Path: "/api/retain/pref", Method: "POST", Params: []Param{{"entries", "json", false, ""}}, SideEffect: "write", Confirm: false},
@@ -115,25 +123,25 @@ var Commands = []Command{
 	{Name: "intro reanalyze", Path: "/api/intro/reanalyze", Method: "POST", Params: []Param{{"seconds", "int", false, ""}}, SideEffect: "trigger", Confirm: false},
 	{Name: "video failures", Path: "/api/video/failures", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "video reanalyze", Path: "/api/video/reanalyze", Method: "POST", Params: []Param{{"ids", "json", false, ""}, {"all", "bool", false, ""}}, SideEffect: "trigger", Confirm: false},
-	{Name: "trash", Path: "/api/trash", Method: "GET", Params: []Param{{"paths", "string", false, ""}, {"group_key", "string", false, ""}, {"group_keys", "string", false, ""}}, SideEffect: "write", Confirm: false},
+	{Name: "trash", Path: "/api/trash", Method: "POST", Params: []Param{{"paths", "json", false, ""}, {"group_key", "string", false, ""}, {"group_keys", "json", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "trash list", Path: "/api/trash/list", Method: "GET", Params: []Param{{"limit", "int", false, ""}, {"cursor", "string", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "trash export", Path: "/api/trash/export", Method: "GET", Params: []Param{{"ids", "string", false, ""}, {"all", "bool", false, "false"}}, SideEffect: "write", Confirm: false},
 	{Name: "trash preview", Path: "/api/trash/preview", Method: "POST", Params: []Param{{"action", "string", false, ""}, {"paths", "json", false, ""}, {"ids", "json", false, ""}, {"group_key", "string", false, ""}, {"group_keys", "json", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "trash restore", Path: "/api/trash/restore", Method: "POST", Params: []Param{{"ids", "json", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "trash delete", Path: "/api/trash/delete", Method: "POST", Params: []Param{{"ids", "json", false, ""}, {"confirm", "bool", false, ""}}, SideEffect: "destructive", Confirm: true},
 	{Name: "trash empty", Path: "/api/trash/empty", Method: "POST", Params: []Param{{"confirm", "bool", false, ""}}, SideEffect: "destructive", Confirm: true},
-	{Name: "cleanup plans", Path: "/api/cleanup/plans", Method: "POST", Params: []Param{{"schedule", "string", true, ""}, {"retain_strategy", "string", false, "modify_newest"}, {"match_mode", "string", false, "all"}}, SideEffect: "write", Confirm: false},
+	{Name: "cleanup plans", Path: "/api/cleanup/plans", Method: "POST", Params: []Param{{"id", "int", false, ""}, {"name", "string", true, ""}, {"enabled", "bool", false, ""}, {"schedule", "string", true, ""}, {"match_mode", "string", false, "all"}, {"min_size", "int", false, ""}, {"min_count", "int", false, ""}, {"extensions", "string", false, ""}, {"retain_strategy", "string", false, "modify_newest"}, {"max_keep_gb", "int", false, ""}, {"rules_json", "string", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "cleanup plans delete", Path: "/api/cleanup/plans/delete", Method: "POST", Params: []Param{{"id", "int", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "cleanup run", Path: "/api/cleanup/run", Method: "POST", Params: []Param{{"id", "int", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "export", Path: "/api/export", Method: "POST", Params: []Param{{"mode", "string", false, ""}, {"format", "string", false, ""}, {"scope", "string", false, ""}, {"marked", "json", false, ""}, {"min_size", "int", false, ""}, {"max_size", "int", false, ""}, {"ext", "string", false, ""}, {"exts", "json", false, ""}, {"q", "string", false, ""}, {"since", "int", false, ""}, {"until", "int", false, ""}, {"n", "int", false, ""}}, SideEffect: "write", Confirm: false},
-	{Name: "import", Path: "/api/import", Method: "POST", Params: []Param{{"name", "string", false, ""}}, SideEffect: "write", Confirm: false},
+	{Name: "import", Path: "/api/import", Method: "POST", Params: []Param{{"file", "string", true, ""}, {"name", "string", false, ""}}, Multipart: true, SideEffect: "write", Confirm: false},
 	{Name: "import sessions", Path: "/api/import/sessions", Method: "GET", Params: []Param{{"id", "string", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "import_session delete", Path: "/api/import/sessions", Method: "DELETE", Params: []Param{{"id", "int", true, ""}}, SideEffect: "destructive", Confirm: true},
 	{Name: "import groups", Path: "/api/import/groups", Method: "GET", Params: []Param{{"session_id", "int", true, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "report", Path: "/api/report", Method: "POST", Params: []Param{{"mode", "string", false, ""}, {"marked", "json", false, ""}, {"min_size", "int", false, ""}, {"max_size", "int", false, ""}, {"ext", "string", false, ""}, {"exts", "json", false, ""}, {"q", "string", false, ""}, {"since", "int", false, ""}, {"until", "int", false, ""}, {"n", "int", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "op-snapshots", Path: "/api/op-snapshots", Method: "GET", Params: []Param{{"kind", "string", false, ""}, {"result", "string", false, ""}, {"keyword", "string", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "fs list", Path: "/api/fs/list", Method: "GET", Params: []Param{{"path", "string", false, ""}}, SideEffect: "none", Confirm: false},
-	{Name: "fs roots", Path: "/api/fs/roots", Method: "POST", Params: nil, SideEffect: "write", Confirm: false},
+	{Name: "fs roots", Path: "/api/fs/roots", Method: "POST", Params: []Param{{"path", "string", true, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "diag authz", Path: "/api/diag/authz", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "fs mkdir", Path: "/api/fs/mkdir", Method: "POST", Params: []Param{{"parent", "string", false, ""}, {"name", "string", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "metric", Path: "/api/metric", Method: "POST", Params: []Param{{"name", "string", false, ""}, {"ms", "int", false, ""}, {"detail", "string", false, ""}}, SideEffect: "none", Confirm: false},
@@ -163,7 +171,7 @@ var Commands = []Command{
 	{Name: "health ignore", Path: "/api/health/ignore", Method: "POST", Params: []Param{{"kind", "string", false, ""}, {"paths", "json", false, ""}, {"restrict_charset", "bool", false, ""}, {"non_cjk", "bool", false, ""}, {"only_uppercase", "bool", false, ""}, {"force", "bool", false, ""}, {"force_ext", "string", false, ""}, {"dry_run", "bool", false, ""}, {"all", "bool", false, ""}, {"reason", "string", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "index repair", Path: "/api/index/repair", Method: "POST", Params: []Param{{"dry_run", "bool", false, ""}}, SideEffect: "trigger", Confirm: false},
 	{Name: "oplog", Path: "/api/oplog", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
-	{Name: "oplog export", Path: "/api/oplog/export", Method: "POST", Params: nil, SideEffect: "write", Confirm: false},
+	{Name: "oplog export", Path: "/api/oplog/export", Method: "POST", Params: []Param{{"action", "string", false, ""}, {"result", "string", false, ""}, {"keyword", "string", false, ""}, {"since", "int", false, ""}, {"until", "int", false, ""}, {"page", "int", false, ""}, {"page_size", "int", false, ""}, {"before_id", "int", false, ""}}, QueryParams: []string{"action", "result", "keyword", "since", "until", "page", "page_size", "before_id"}, SideEffect: "write", Confirm: false},
 	{Name: "oplog clear", Path: "/api/oplog/clear", Method: "POST", Params: []Param{{"before_ts", "int", false, ""}, {"confirm", "bool", false, ""}}, SideEffect: "destructive", Confirm: true},
 	{Name: "op-snapshots unfinished", Path: "/api/op-snapshots/unfinished", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 }

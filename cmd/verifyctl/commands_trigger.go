@@ -23,7 +23,7 @@ type triggerDryRunResult struct {
 
 func init() {
 	// 所有 trigger 命令共用低风险执行器：默认 dry-run，只有 --yes 才真正发请求。
-	// write/destructive 保持 Run 为空，由后续任务接入。
+	// write 命令由 commands_write.go 接入同类执行器；destructive 由 Task 9 接入双门槛。
 	for i := range Commands {
 		if Commands[i].SideEffect != "trigger" || Commands[i].Run != nil {
 			continue
@@ -43,11 +43,17 @@ func init() {
 // 默认（未带 --yes）或显式 --dry-run 只回 would_do，不发任何请求；
 // 带 --yes 才调用 c.Do；成功时原样透传响应体（触发类只返回任务号，CLI 不轮询）。
 func runTriggerCommand(ctx context.Context, c *Client, cmd Command, params map[string]string) ([]byte, error) {
+	return runGuardedCommand(ctx, c, cmd, params)
+}
+
+// runGuardedCommand 是 trigger/write 共用的低风险执行器：dry-run 默认开启，--yes 才真正发请求。
+// 控制参数（入口层参数与 __cli_ 内部 key）只影响本地行为，既不进 would_do.params，也不发给服务端；
+// 业务 dry_run 等真实参数原样透传。放在本文件是为了让 transport 层可独立编译（write 接线在 Task 8）。
+func runGuardedCommand(ctx context.Context, c *Client, cmd Command, params map[string]string) ([]byte, error) {
 	if c == nil {
 		return nil, &commandHTTPError{Detail: &ErrDetail{Message: "HTTP 客户端未初始化"}}
 	}
 
-	// 控制参数只影响本地行为，既不进 would_do.params，也不发给服务端。
 	request := make(map[string]string, len(params))
 	for k, v := range params {
 		if !isControlParam(k) {
@@ -61,7 +67,8 @@ func runTriggerCommand(ctx context.Context, c *Client, cmd Command, params map[s
 	}
 	// 本地干跑开关走 __cli_ 内部 key；业务 dry_run 原样透传给服务端。
 	if params["__cli_dry_run"] == "true" || params["__cli_yes"] != "true" {
-		return marshalDryRun(cmd.Name, method, cmd.Path, request, params["pretty"] == "true")
+		// would_do 展示实际会请求的路径（已代入路径参数），便于核对。
+		return marshalDryRun(cmd.Name, method, effectivePath(cmd, request), request, params["pretty"] == "true")
 	}
 
 	raw, status, err := c.Do(ctx, cmd, request)
