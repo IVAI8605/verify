@@ -19,7 +19,7 @@ func TestTriggerDryRunNoRequest(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
-	out, err := runTriggerCommand(context.Background(), c, Command{Path: "/api/scan", SideEffect: "trigger"}, map[string]string{"dry_run": "true"})
+	out, err := runTriggerCommand(context.Background(), c, Command{Path: "/api/scan", SideEffect: "trigger"}, map[string]string{"__cli_dry_run": "true"})
 	if err != nil {
 		t.Fatalf("dry-run 不应报错：%v", err)
 	}
@@ -51,12 +51,13 @@ func TestTriggerDefaultIsDryRun(t *testing.T) {
 	}
 }
 
-// TestTriggerWouldDoShape 验证 would_do 里带命令/method/path/params，且控制参数不外泄。
+// TestTriggerWouldDoShape 验证 would_do 里带命令/method/path/params，控制参数不外泄，
+// 业务 dry_run 则照常显示。
 func TestTriggerWouldDoShape(t *testing.T) {
 	c := NewClient("http://127.0.0.1:1", "t")
 	cmd := Command{Name: "scan", Path: "/api/scan", Method: "POST", SideEffect: "trigger"}
 	out, err := runTriggerCommand(context.Background(), c, cmd, map[string]string{
-		"dry_run": "true", "yes": "true", "pretty": "true", "mode": "quick", "confirm_token": "secret",
+		"__cli_dry_run": "true", "__cli_yes": "true", "pretty": "true", "mode": "quick", "confirm_token": "secret", "dry_run": "true",
 	})
 	if err != nil {
 		t.Fatalf("dry-run 不应报错：%v", err)
@@ -82,13 +83,16 @@ func TestTriggerWouldDoShape(t *testing.T) {
 	if got.WouldDo.Params["mode"] != "quick" {
 		t.Fatalf("would_do 应含业务参数 mode：%+v", got.WouldDo.Params)
 	}
-	for _, control := range []string{"dry_run", "yes", "pretty", "confirm_token"} {
+	if got.WouldDo.Params["dry_run"] != "true" {
+		t.Fatalf("业务 dry_run 应在 would_do.params 里显示原值：%+v", got.WouldDo.Params)
+	}
+	for _, control := range []string{"__cli_dry_run", "__cli_yes", "pretty", "confirm_token"} {
 		if _, ok := got.WouldDo.Params[control]; ok {
 			t.Fatalf("控制参数 %s 不应进入 would_do.params", control)
 		}
 	}
-	if strings.Contains(string(out), "secret") {
-		t.Fatal("confirm_token 不得出现在输出里")
+	if strings.Contains(string(out), "secret") || strings.Contains(string(out), "__cli_") {
+		t.Fatal("confirm_token 与内部保留 key 不得出现在输出里")
 	}
 }
 
@@ -130,7 +134,7 @@ func TestTriggerYesExecutes(t *testing.T) {
 		t.Fatal("命令表应有 scan")
 	}
 	c := NewClient(srv.URL, "t")
-	out, err := runTriggerCommand(context.Background(), c, cmd, map[string]string{"yes": "true", "mode": "quick"})
+	out, err := runTriggerCommand(context.Background(), c, cmd, map[string]string{"__cli_yes": "true", "mode": "quick"})
 	if err != nil {
 		t.Fatalf("--yes 执行失败：%v", err)
 	}
@@ -140,8 +144,8 @@ func TestTriggerYesExecutes(t *testing.T) {
 	if !strings.Contains(string(gotBody), `"mode":"quick"`) {
 		t.Fatalf("请求体缺业务参数：%s", gotBody)
 	}
-	if strings.Contains(string(gotBody), "yes") {
-		t.Fatalf("控制参数 yes 不应发给服务端：%s", gotBody)
+	if strings.Contains(string(gotBody), "__cli_") {
+		t.Fatalf("内部保留 key 不应发给服务端：%s", gotBody)
 	}
 	if !strings.Contains(string(out), "t-42") {
 		t.Fatalf("响应未原样透传：%s", out)
@@ -196,6 +200,74 @@ func TestTriggerCLIRoundTrip(t *testing.T) {
 	}
 }
 
+// TestTriggerBusinessDryRunPassThrough 修复本地 dry-run 开关与服务端业务参数 dry_run 撞 key：
+// 带 --yes 且不带本地 --dry-run 时，业务 dry_run=true 必须原样进 HTTP 请求体；
+// 带本地 --dry-run 时才回 would_do，且回包能看到业务 dry_run 原值。
+func TestTriggerBusinessDryRunPassThrough(t *testing.T) {
+	var gotBody string
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		if strings.Contains(gotBody, "__cli_") {
+			t.Errorf("内部保留 key 泄漏进请求体：%s", gotBody)
+		}
+		w.Write([]byte(`{"ok":true,"dry_run":true}`))
+	}))
+	defer srv.Close()
+
+	cmd, ok := findCommand("index repair")
+	if !ok {
+		t.Fatal("命令表应有 index repair")
+	}
+	c := NewClient(srv.URL, "t")
+
+	// 服务端预演：业务 dry_run=true + 本地 --yes，必须真的发请求。
+	out, err := runTriggerCommand(context.Background(), c, cmd, map[string]string{
+		"__cli_yes": "true", "dry_run": "true",
+	})
+	if err != nil {
+		t.Fatalf("业务 dry_run 执行失败：%v", err)
+	}
+	if !called {
+		t.Fatal("业务 dry_run=true 被本地开关拦截，未发请求")
+	}
+	if strings.Contains(string(out), "would_do") {
+		t.Fatalf("业务 dry_run 不应触发本地 would_do：%s", out)
+	}
+	if !strings.Contains(gotBody, `"dry_run":"true"`) && !strings.Contains(gotBody, `"dry_run":true`) {
+		t.Fatalf("请求体缺业务 dry_run=true：%s", gotBody)
+	}
+
+	// 从 CLI 入口再走一遍，确认 --dry_run=true 映射到业务参数而非本地开关。
+	called = false
+	gotBody = ""
+	var buf bytes.Buffer
+	if code := run([]string{"--url", srv.URL, "--token", "t", "index repair", "--yes", "--dry_run=true"}, &buf); code != 0 {
+		t.Fatalf("CLI 传业务 dry_run 退出码=%d，输出=%q", code, buf.String())
+	}
+	if !called || !strings.Contains(gotBody, "dry_run") || !strings.Contains(gotBody, "true") {
+		t.Fatalf("CLI 未透传业务 dry_run：called=%v body=%q", called, gotBody)
+	}
+
+	// 本地 --dry-run 优先：不发请求，但 would_do 里能看到业务 dry_run 原值。
+	called = false
+	buf.Reset()
+	if code := run([]string{"--url", srv.URL, "--token", "t", "index repair", "--dry-run", "--yes", "--dry_run=true"}, &buf); code != 0 {
+		t.Fatalf("本地 dry-run 退出码=%d，输出=%q", code, buf.String())
+	}
+	if called {
+		t.Fatal("本地 --dry-run 不应发请求")
+	}
+	if !strings.Contains(buf.String(), `"dry_run":"true"`) {
+		t.Fatalf("would_do 未显示业务 dry_run 原值：%q", buf.String())
+	}
+	if strings.Contains(buf.String(), "__cli_") {
+		t.Fatalf("would_do 泄漏内部保留 key：%q", buf.String())
+	}
+}
+
 // TestTriggerErrorMapping 验证 --yes 下的 HTTP 错误映射为带状态码的 commandHTTPError。
 func TestTriggerErrorMapping(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +281,7 @@ func TestTriggerErrorMapping(t *testing.T) {
 		t.Fatal("命令表应有 scan stop")
 	}
 	c := NewClient(srv.URL, "t")
-	_, err := runTriggerCommand(context.Background(), c, cmd, map[string]string{"yes": "true"})
+	_, err := runTriggerCommand(context.Background(), c, cmd, map[string]string{"__cli_yes": "true"})
 	if err == nil {
 		t.Fatal("409 应返回错误")
 	}

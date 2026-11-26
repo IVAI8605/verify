@@ -32,8 +32,18 @@ func NewClient(baseURL, token string) *Client {
 
 // Do 按 cmd.Method 组装请求：GET/HEAD/DELETE 把参数编码进 query，
 // POST/PUT/PATCH 按注册表里的 Param.Type 转成 JSON 字段。
+// 内部保留 key（__cli_*）与入口层控制参数在 query 与 body 两路都剔除，
+// 业务 dry_run 等真实参数不受影响。
 // 返回原始响应体与 HTTP 状态码；网络错误时状态码为 0，由调用方映射到退出码 4。
 func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) ([]byte, int, error) {
+	request := make(map[string]string, len(params))
+	for k, v := range params {
+		if isControlParam(k) {
+			continue
+		}
+		request[k] = v
+	}
+
 	method := cmd.Method
 	if method == "" {
 		method = http.MethodGet
@@ -43,7 +53,7 @@ func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) 
 	var body io.Reader
 	if usesQuery(method) {
 		q := url.Values{}
-		for k, v := range params {
+		for k, v := range request {
 			if v == "" {
 				continue
 			}
@@ -53,7 +63,7 @@ func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) 
 			target += "?" + q.Encode()
 		}
 	} else {
-		payload, err := typedPayload(cmd, params)
+		payload, err := typedPayload(cmd, request)
 		if err != nil {
 			return nil, 0, fmt.Errorf("编码请求体失败（%v）", err)
 		}
@@ -113,6 +123,9 @@ func typedPayload(cmd Command, params map[string]string) ([]byte, error) {
 	}
 	payload := make(map[string]any, len(params))
 	for k, v := range params {
+		if isInternalParam(k) {
+			continue
+		}
 		switch types[k] {
 		case "bool":
 			if b, err := strconv.ParseBool(v); err == nil {

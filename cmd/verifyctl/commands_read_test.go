@@ -126,11 +126,18 @@ func TestReadPassthrough(t *testing.T) {
 		query = r.URL.RawQuery
 		w.Write([]byte(`{}`))
 	})
-	if _, err := runReadCommand(context.Background(), c, cmd, map[string]string{"pretty": "true", "dry_run": "true"}); err != nil {
+	if _, err := runReadCommand(context.Background(), c, cmd, map[string]string{"pretty": "true", "__cli_dry_run": "true", "__cli_yes": "true"}); err != nil {
 		t.Fatalf("控制参数场景执行失败：%v", err)
 	}
-	if strings.Contains(query, "pretty") || strings.Contains(query, "dry_run") {
+	if strings.Contains(query, "pretty") || strings.Contains(query, "__cli_") {
 		t.Fatalf("控制参数泄漏进查询串：%q", query)
+	}
+	// dry_run 是真实业务参数，不得被本地开关误过滤。
+	if _, err := runReadCommand(context.Background(), c, cmd, map[string]string{"dry_run": "true"}); err != nil {
+		t.Fatalf("业务 dry_run 场景执行失败：%v", err)
+	}
+	if !strings.Contains(query, "dry_run=true") {
+		t.Fatalf("业务 dry_run 未透传到查询串：%q", query)
 	}
 }
 

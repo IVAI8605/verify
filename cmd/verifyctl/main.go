@@ -184,7 +184,8 @@ func parseCommandParams(cmd Command, args []string) (map[string]string, error) {
 	for _, p := range cmd.Params {
 		values[p.Name] = fs.String(p.Name, p.Default, "")
 	}
-	// index repair 的 dry_run 是真实路由参数，同时接受下划线写法。
+	// index repair / health rename / health ignore 的 dry_run 是真实业务参数，
+	// 同时接受下划线写法；本地 --dry-run 改存 __cli_dry_run，二者互不覆盖。
 	if _, exists := values["dry_run"]; !exists {
 		values["dry_run"] = fs.String("dry_run", "", "")
 	}
@@ -209,11 +210,13 @@ func parseCommandParams(cmd Command, args []string) (map[string]string, error) {
 	if *pretty {
 		params["pretty"] = "true"
 	}
-	if *dryRun && params["dry_run"] == "" {
-		params["dry_run"] = "true"
+	// dry_run / yes 是部分接口的真实业务参数，本地开关必须走 __cli_ 前缀的内部 key，
+	// 否则 index repair / health rename / health ignore 的服务端预演永远不可达。
+	if *dryRun && params["__cli_dry_run"] == "" {
+		params["__cli_dry_run"] = "true"
 	}
 	if *yes {
-		params["yes"] = "true"
+		params["__cli_yes"] = "true"
 	}
 	if *confirmToken != "" {
 		params["confirm_token"] = *confirmToken

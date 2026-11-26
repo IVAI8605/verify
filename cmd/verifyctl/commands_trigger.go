@@ -50,7 +50,7 @@ func runTriggerCommand(ctx context.Context, c *Client, cmd Command, params map[s
 	// 控制参数只影响本地行为，既不进 would_do.params，也不发给服务端。
 	request := make(map[string]string, len(params))
 	for k, v := range params {
-		if !controlParams[k] {
+		if !isControlParam(k) {
 			request[k] = v
 		}
 	}
@@ -59,7 +59,8 @@ func runTriggerCommand(ctx context.Context, c *Client, cmd Command, params map[s
 	if method == "" {
 		method = http.MethodGet
 	}
-	if params["dry_run"] == "true" || params["yes"] != "true" {
+	// 本地干跑开关走 __cli_ 内部 key；业务 dry_run 原样透传给服务端。
+	if params["__cli_dry_run"] == "true" || params["__cli_yes"] != "true" {
 		return marshalDryRun(cmd.Name, method, cmd.Path, request, params["pretty"] == "true")
 	}
 
@@ -82,9 +83,14 @@ func runTriggerCommand(ctx context.Context, c *Client, cmd Command, params map[s
 }
 
 // marshalDryRun 把将执行的命令信息编码成 would_do 回包。
+// 内部保留 key（__cli_*）绝不进回包；业务 dry_run 照常显示，便于核对预演动作。
 func marshalDryRun(name, method, path string, request map[string]string, pretty bool) ([]byte, error) {
-	if request == nil {
-		request = map[string]string{}
+	clean := make(map[string]string, len(request))
+	for k, v := range request {
+		if isInternalParam(k) {
+			continue
+		}
+		clean[k] = v
 	}
 	out, err := json.Marshal(triggerDryRunResult{
 		DryRun: true,
@@ -92,7 +98,7 @@ func marshalDryRun(name, method, path string, request map[string]string, pretty 
 			Command: name,
 			Method:  method,
 			Path:    path,
-			Params:  request,
+			Params:  clean,
 		},
 	})
 	if err != nil {

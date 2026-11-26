@@ -7,19 +7,31 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // maxPageSize 与服务端 groupQuery 的上限一致：分页一次最多取 1000 组。
 const maxPageSize = 1000
 
 // controlParams 是入口层自用参数，不能作为 query/body 发给服务端。
-// 注意 token 不在此列：events 与 search selection 确有同名路由参数。
+// 注意 dry_run / yes 故意不在此列：它们是 index repair、health rename/ignore 等
+// 接口的真实业务参数，必须原样透传；本地开关改用 __cli_ 前缀的内部 key。
+// token 也不在此列：events 与 search selection 确有同名路由参数。
 var controlParams = map[string]bool{
 	"pretty":        true,
-	"dry_run":       true,
-	"yes":           true,
 	"confirm_token": true,
 	"help-json":     true,
+}
+
+// isInternalParam 判断是否为 CLI 内部保留参数（本地 dry-run / yes 开关）。
+// 这类 key 既不进 would_do 回包，也不进 HTTP 请求。
+func isInternalParam(k string) bool {
+	return strings.HasPrefix(k, "__cli_")
+}
+
+// isControlParam 汇总所有不应发给服务端的参数：入口层控制参数 + 内部保留 key。
+func isControlParam(k string) bool {
+	return controlParams[k] || isInternalParam(k)
 }
 
 // commandHTTPError 携带 HTTP 状态码与服务端错误原文，供入口层映射语义退出码。
@@ -85,7 +97,7 @@ func runReadCommand(ctx context.Context, c *Client, cmd Command, params map[stri
 
 	request := make(map[string]string, len(params))
 	for k, v := range params {
-		if !controlParams[k] {
+		if !isControlParam(k) {
 			request[k] = v
 		}
 	}
