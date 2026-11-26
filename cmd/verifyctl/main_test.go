@@ -51,17 +51,14 @@ func TestGlobalFlagsAccepted(t *testing.T) {
 	}
 }
 
-// TestRegisteredCommandNotExecuted 验证尚未接入的破坏性命令（Task 9 才接入，此处用 trash empty）
-// 返回非 0 并给出中文提示，防止脚本把「退出码 0 + 空输出」误判为操作已生效。
-// write 类已在 Task 8 接入（默认 dry-run），trigger 类已在 Task 7 接入，均不能再当「尚未接入」样本。
-func TestRegisteredCommandNotExecuted(t *testing.T) {
-	var buf bytes.Buffer
-	code := run([]string{"trash", "empty"}, &buf)
-	if code == 0 {
-		t.Fatalf("已登记但执行尚未接入的命令不应返回 0；输出=%q", buf.String())
-	}
-	if !strings.Contains(buf.String(), "尚未接入") {
-		t.Fatalf("应给出中文提示说明执行尚未接入；输出=%q", buf.String())
+// TestAllRegisteredCommandsWired 验证命令表里每条命令都已接线（none/trigger/write/destructive），
+// 不再存在「已登记但执行未接入」的情况，避免脚本把空输出误判为操作已生效。
+// destructive 类由 Task 9 以「dry-run + 双门槛」接入，未带 --yes 时只会回 would_do。
+func TestAllRegisteredCommandsWired(t *testing.T) {
+	for _, cmd := range Commands {
+		if cmd.Run == nil {
+			t.Fatalf("命令 %s 已登记但 Run 未接入", cmd.Name)
+		}
 	}
 }
 

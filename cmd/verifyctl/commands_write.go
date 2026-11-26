@@ -4,7 +4,7 @@ import "context"
 
 func init() {
 	// 所有 write 命令接入统一的「默认 dry-run、--yes 才执行」执行器。
-	// destructive 保持 Run 为空（退出码 2「尚未接入」），由 Task 9 接入双门槛。
+	// destructive 由 Task 9 的 commands_danger.go 单独接入「--yes + --confirm-token」双门槛。
 	for i := range Commands {
 		if Commands[i].SideEffect != "write" || Commands[i].Run != nil {
 			continue

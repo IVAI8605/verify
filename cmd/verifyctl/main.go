@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -106,6 +107,13 @@ func run(args []string, out io.Writer) int {
 
 	result, err := cmd.Run(context.Background(), c, params)
 	if err != nil {
+		// 危险操作的本地用法错误（缺 --yes / --confirm-token、令牌不匹配或过期）映射退出码 2，
+		// 全程未发 HTTP 请求；用明文提示，与其它本地用法错误一致。
+		var ue *usageError
+		if errors.As(err, &ue) {
+			fmt.Fprintf(out, "命令 %s 未执行：%s\n", cmd.Name, ue.msg)
+			return 2
+		}
 		status, detail := httpStatusFromError(err)
 		if werr := writeError(out, cmd.Name, detail); werr != nil {
 			fmt.Fprintf(out, "输出错误信封失败（%v）\n", werr)

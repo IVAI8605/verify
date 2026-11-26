@@ -71,6 +71,13 @@ func runGuardedCommand(ctx context.Context, c *Client, cmd Command, params map[s
 		return marshalDryRun(cmd.Name, method, effectivePath(cmd, request), request, params["pretty"] == "true")
 	}
 
+	return executeCommand(ctx, c, cmd, request, params["pretty"] == "true")
+}
+
+// executeCommand 发送真实请求并统一处理网络错误、非 2xx 状态与 --pretty 缩进。
+// trigger / write / destructive 三类执行器共用，保证确认协议之外的发送路径不漂移；
+// 内部保留 key 与入口层控制参数已在 request 组装阶段剔除，这里不再重复过滤。
+func executeCommand(ctx context.Context, c *Client, cmd Command, request map[string]string, pretty bool) ([]byte, error) {
 	raw, status, err := c.Do(ctx, cmd, request)
 	if err != nil {
 		return nil, &commandHTTPError{Status: status, Cause: err, Detail: &ErrDetail{Message: err.Error()}}
@@ -78,7 +85,7 @@ func runGuardedCommand(ctx context.Context, c *Client, cmd Command, params map[s
 	if status < 200 || status >= 300 {
 		return nil, &commandHTTPError{Status: status, Detail: parseErrorDetail(raw)}
 	}
-	if params["pretty"] == "true" && json.Valid(raw) {
+	if pretty && json.Valid(raw) {
 		var buf bytes.Buffer
 		if err := json.Indent(&buf, raw, "", "  "); err != nil {
 			// 已通过 json.Valid，理论上不会走到；仍原样透传，绝不改写字段。

@@ -160,27 +160,26 @@ func TestPageSizeClamped(t *testing.T) {
 	}
 }
 
-// TestAllNoneCommandsWired 验证全部 none 命令都挂上 Run，
-// destructive 仍保持未接入（trigger 由 Task 7、write 由 Task 8 接入，不在此断言范围内）。
+// TestAllNoneCommandsWired 验证全部 none 命令都挂上 Run；
+// destructive 已由 Task 9 接入双门槛执行器，这里一并断言其 Run 非空防回潮。
 func TestAllNoneCommandsWired(t *testing.T) {
-	none, others := 0, 0
+	none, destructive := 0, 0
 	for _, cmd := range Commands {
-		if cmd.SideEffect == "none" {
+		switch cmd.SideEffect {
+		case "none":
 			none++
 			if cmd.Run == nil {
 				t.Errorf("none 命令 %s 未挂 Run", cmd.Name)
 			}
-			continue
-		}
-		if cmd.SideEffect == "destructive" {
-			others++
-			if cmd.Run != nil {
-				t.Errorf("破坏性命令 %s 不应在本任务接入 Run", cmd.Name)
+		case "destructive":
+			destructive++
+			if cmd.Run == nil {
+				t.Errorf("破坏性命令 %s 未接入 Run", cmd.Name)
 			}
 		}
 	}
-	if none == 0 || others == 0 {
-		t.Fatalf("命令表分类异常：none=%d 其他=%d", none, others)
+	if none == 0 || destructive == 0 {
+		t.Fatalf("命令表分类异常：none=%d destructive=%d", none, destructive)
 	}
 }
 
