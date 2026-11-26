@@ -27,9 +27,9 @@ func TestVersionSubcommand(t *testing.T) {
 
 // TestVersionSubcommandNoTokenLeak 验证全局 token 参数不会以明文出现在输出里。
 func TestVersionSubcommandNoTokenLeak(t *testing.T) {
-	const secret = "cli-明文令牌-禁止回显-9f7c"
-	out := runCLI(t, "--token", secret, "version")
-	if strings.Contains(out, secret) {
+	const placeholder = "cli-明文令牌-禁止回显-9f7c"
+	out := runCLI(t, "--token", placeholder, "version")
+	if strings.Contains(out, placeholder) {
 		t.Fatalf("version 输出泄漏了令牌明文：%q", out)
 	}
 }
