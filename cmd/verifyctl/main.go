@@ -22,7 +22,7 @@ func run(args []string, out io.Writer) int {
 	fs.String("data-dir", "", "Verify 数据目录，供本地只读辅助使用")
 	fs.String("format", "", "输出格式：table 或 json")
 	fs.Bool("raw", false, "输出原始响应体")
-	fs.Bool("help-json", false, "以 JSON 格式输出帮助")
+	helpJSON := fs.Bool("help-json", false, "以 JSON 格式输出帮助")
 
 	fs.Usage = func() {
 		fmt.Fprintln(out, "用法：verifyctl [全局参数] <子命令>")
@@ -38,6 +38,15 @@ func run(args []string, out io.Writer) int {
 		return 2
 	}
 
+	// --help-json 只做自描述：无论后面是否带子命令，都输出全量命令清单并正常退出。
+	if *helpJSON {
+		if err := writeCommandList(out); err != nil {
+			fmt.Fprintf(out, "输出命令清单失败（%v）\n", err)
+			return 1
+		}
+		return 0
+	}
+
 	rest := fs.Args()
 	if len(rest) == 0 {
 		fs.Usage()
@@ -49,6 +58,10 @@ func run(args []string, out io.Writer) int {
 		fmt.Fprintln(out, version)
 		return 0
 	default:
+		if _, ok := findCommand(rest[0]); ok {
+			// 已登记命令：实际执行由后续任务接入，本阶段只完成名字解析。
+			return 0
+		}
 		fmt.Fprintf(out, "未知子命令：%s\n", rest[0])
 		return 2
 	}

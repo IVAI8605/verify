@@ -5,10 +5,10 @@ import "context"
 // Param 描述命令的一个参数：Name 参数名，Type 参数类型（string/int/bool/json），
 // Required 是否必填，Default 缺省值。供 --help-json 自描述使用。
 type Param struct {
-	Name     string
-	Type     string
-	Required bool
-	Default  string
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Required bool   `json:"required"`
+	Default  string `json:"default"`
 }
 
 // Command 是一条 CLI 命令的注册信息。Name 为手工分发用的命令名（可含空格表示二级子命令），
@@ -20,13 +20,13 @@ type Param struct {
 // 并在函数体内做 c.(*Client) 断言；这是本任务产出的权威接口。
 // 本任务只登记条目，不实现 Run；Run 的填充由 Task 6/8/9/10 完成。
 type Command struct {
-	Name       string
-	Path       string
-	Method     string
-	Params     []Param
-	SideEffect string
-	Confirm    bool
-	Run        func(ctx context.Context, c any, args map[string]string) (any, error)
+	Name       string                                                                `json:"name"`
+	Path       string                                                                `json:"path"`
+	Method     string                                                                `json:"method"`
+	Params     []Param                                                               `json:"params"`
+	SideEffect string                                                                `json:"side_effect"`
+	Confirm    bool                                                                  `json:"confirm_required"`
+	Run        func(ctx context.Context, c any, args map[string]string) (any, error) `json:"-"`
 }
 
 // Commands 是全量命令表：逐条对应 internal/web/server.go 注册的非静态路由，
