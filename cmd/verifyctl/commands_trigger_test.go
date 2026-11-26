@@ -97,7 +97,7 @@ func TestTriggerWouldDoShape(t *testing.T) {
 }
 
 // TestTriggerAllTriggerCommandsWired 验证所有 trigger 命令都接入 Run，
-// 而 write/destructive 仍保持 nil（留给后续任务）。
+// destructive 仍保持 nil（留给 Task 9；write 已由 Task 8 接入）。
 func TestTriggerAllTriggerCommandsWired(t *testing.T) {
 	triggers := 0
 	for _, cmd := range Commands {
@@ -107,9 +107,9 @@ func TestTriggerAllTriggerCommandsWired(t *testing.T) {
 			if cmd.Run == nil {
 				t.Fatalf("trigger 命令 %s 的 Run 未接入", cmd.Name)
 			}
-		case "write", "destructive":
+		case "destructive":
 			if cmd.Run != nil {
-				t.Fatalf("副作用命令 %s 不应在本任务接入 Run", cmd.Name)
+				t.Fatalf("破坏性命令 %s 不应在本任务接入 Run", cmd.Name)
 			}
 		}
 	}

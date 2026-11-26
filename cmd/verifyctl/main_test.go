@@ -51,12 +51,12 @@ func TestGlobalFlagsAccepted(t *testing.T) {
 	}
 }
 
-// TestRegisteredCommandNotExecuted 验证写类命令（此处用 write 类的 relink，Task 8 才接入）返回非 0
-// 并给出中文提示，防止脚本把「退出码 0 + 空输出」误判为操作已生效（destructive 命令尤其危险）。
-// trigger 类命令已在 Task 7 接入，默认值只有 dry-run，不能再当作「尚未接入」的样本。
+// TestRegisteredCommandNotExecuted 验证尚未接入的破坏性命令（Task 9 才接入，此处用 trash empty）
+// 返回非 0 并给出中文提示，防止脚本把「退出码 0 + 空输出」误判为操作已生效。
+// write 类已在 Task 8 接入（默认 dry-run），trigger 类已在 Task 7 接入，均不能再当「尚未接入」样本。
 func TestRegisteredCommandNotExecuted(t *testing.T) {
 	var buf bytes.Buffer
-	code := run([]string{"relink"}, &buf)
+	code := run([]string{"trash", "empty"}, &buf)
 	if code == 0 {
 		t.Fatalf("已登记但执行尚未接入的命令不应返回 0；输出=%q", buf.String())
 	}

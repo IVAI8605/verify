@@ -161,7 +161,7 @@ func TestPageSizeClamped(t *testing.T) {
 }
 
 // TestAllNoneCommandsWired 验证全部 none 命令都挂上 Run，
-// write/destructive 仍保持未接入（trigger 已由 Task 7 接入，不在此断言范围内）。
+// destructive 仍保持未接入（trigger 由 Task 7、write 由 Task 8 接入，不在此断言范围内）。
 func TestAllNoneCommandsWired(t *testing.T) {
 	none, others := 0, 0
 	for _, cmd := range Commands {
@@ -172,10 +172,10 @@ func TestAllNoneCommandsWired(t *testing.T) {
 			}
 			continue
 		}
-		if cmd.SideEffect == "write" || cmd.SideEffect == "destructive" {
+		if cmd.SideEffect == "destructive" {
 			others++
 			if cmd.Run != nil {
-				t.Errorf("副作用命令 %s 不应在本任务接入 Run", cmd.Name)
+				t.Errorf("破坏性命令 %s 不应在本任务接入 Run", cmd.Name)
 			}
 		}
 	}
