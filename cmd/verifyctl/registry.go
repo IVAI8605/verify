@@ -37,6 +37,52 @@ type Command struct {
 	Run       func(ctx context.Context, c any, args map[string]string) (any, error) `json:"-"`
 }
 
+// groupQueryParams 对应 internal/web/common.go 的 groupQuery 实际读取的全部查询参数。
+// 凡走 groupQuery 的分组接口都共享这组可选过滤参数；类型严格对齐服务端读取方式：
+// 数值用 int，boolParam 用 bool，其余（含逗号分隔的 exts、关键字 q）用 string。
+// 默认值一律留空，只有调用方显式提供才发送，避免把零值强行塞给服务端。
+func groupQueryParams() []Param {
+	return []Param{
+		{"page_size", "int", false, "20"},
+		{"page", "int", false, "1"},
+		{"min_size", "int", false, ""},
+		{"max_kb", "int", false, ""},
+		{"since_ms", "int", false, ""},
+		{"until_ms", "int", false, ""},
+		{"ext", "string", false, ""},
+		{"exts", "string", false, ""},
+		{"q", "string", false, ""},
+		{"sort", "string", false, ""},
+		{"order", "string", false, ""},
+		{"date_only", "bool", false, ""},
+		{"same_drive", "string", false, ""},
+		{"max_dur_diff", "int", false, ""},
+		{"ignore_same_folder", "bool", false, ""},
+		{"folder_name", "string", false, ""},
+		{"folder_depth", "int", false, ""},
+		{"similar_name", "bool", false, ""},
+		{"size_tol_kb", "int", false, ""},
+		{"tag_name", "string", false, ""},
+		{"tag_value", "string", false, ""},
+		{"skip_total", "bool", false, ""},
+	}
+}
+
+// groupsParams 是 /api/groups（handleGroups）的完整参数：mode 选中同名/精确分组，
+// 其余继承 groupQuery；另加 cross（handleGroups 用 boolParam 读取，用于跨设备标记）。
+func groupsParams() []Param {
+	p := append([]Param{{"mode", "string", false, ""}}, groupQueryParams()...)
+	return append(p, Param{"cross", "bool", false, ""})
+}
+
+// withLeading 在共享分组过滤参数前插入命令专属的前置参数（如 near / tag_id），
+// 返回新切片，避免多个命令并发 appending 伤害底层数组。
+func withLeading(lead Param, rest []Param) []Param {
+	out := make([]Param, 0, len(rest)+1)
+	out = append(out, lead)
+	return append(out, rest...)
+}
+
 // Commands 是全量命令表：逐条对应 internal/web/server.go 注册的非静态路由，
 // 是分发入口与 --help-json 的唯一真相源。覆盖断言见 registry_test.go。
 // 特例：/api/trash 走 GET 但会因 HealTrashRows 写库，故 SideEffect 标 write；
@@ -48,10 +94,10 @@ var Commands = []Command{
 	{Name: "tasks", Path: "/api/tasks", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "scan", Path: "/api/scan", Method: "POST", Params: []Param{{"mode", "string", false, ""}, {"quick", "bool", false, ""}}, SideEffect: "trigger", Confirm: false},
 	{Name: "scan stop", Path: "/api/scan/stop", Method: "POST", Params: nil, SideEffect: "trigger", Confirm: false},
-	{Name: "groups", Path: "/api/groups", Method: "GET", Params: []Param{{"mode", "string", false, ""}, {"page_size", "int", false, "20"}, {"page", "int", false, "1"}}, SideEffect: "none", Confirm: false},
+	{Name: "groups", Path: "/api/groups", Method: "GET", Params: groupsParams(), SideEffect: "none", Confirm: false},
 	{Name: "folder stats", Path: "/api/folder/stats", Method: "GET", Params: []Param{{"path", "string", false, ""}}, SideEffect: "none", Confirm: false},
-	{Name: "groups video", Path: "/api/groups/video", Method: "GET", Params: []Param{{"page_size", "int", false, "20"}}, SideEffect: "none", Confirm: false},
-	{Name: "groups intro", Path: "/api/groups/intro", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
+	{Name: "groups video", Path: "/api/groups/video", Method: "GET", Params: groupQueryParams(), SideEffect: "none", Confirm: false},
+	{Name: "groups intro", Path: "/api/groups/intro", Method: "GET", Params: append(groupQueryParams(), Param{"n", "int", false, ""}), SideEffect: "none", Confirm: false},
 	{Name: "groups photo", Path: "/api/groups/photo", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "relink preview", Path: "/api/relink/preview", Method: "POST", Params: []Param{{"keep", "string", false, ""}, {"paths", "json", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "relink", Path: "/api/relink", Method: "POST", Params: []Param{{"keep", "string", false, ""}, {"paths", "json", false, ""}}, SideEffect: "write", Confirm: false},
@@ -78,18 +124,18 @@ var Commands = []Command{
 	{Name: "transcode cancel", Path: "/api/transcode/cancel", Method: "POST", Params: []Param{{"job_id", "int", false, ""}}, SideEffect: "trigger", Confirm: false},
 	{Name: "transcode residue", Path: "/api/transcode/residue", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "transcode residue clean", Path: "/api/transcode/residue/clean", Method: "POST", Params: []Param{{"paths", "json", false, ""}}, SideEffect: "destructive", Confirm: true},
-	{Name: "groups audio", Path: "/api/groups/audio", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
+	{Name: "groups audio", Path: "/api/groups/audio", Method: "GET", Params: groupQueryParams(), SideEffect: "none", Confirm: false},
 	{Name: "groups folder", Path: "/api/groups/folder", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
-	{Name: "groups fuzzy", Path: "/api/groups/fuzzy", Method: "GET", Params: []Param{{"near", "string", false, ""}}, SideEffect: "none", Confirm: false},
+	{Name: "groups fuzzy", Path: "/api/groups/fuzzy", Method: "GET", Params: withLeading(Param{"near", "string", false, ""}, groupQueryParams()), SideEffect: "none", Confirm: false},
 	{Name: "folder_rename preview", Path: "/api/folder_rename/preview", Method: "POST", Params: []Param{{"dir", "string", false, ""}, {"prefix_a", "bool", false, "false"}}, SideEffect: "none", Confirm: false},
 	{Name: "folder_rename", Path: "/api/folder_rename", Method: "POST", Params: []Param{{"dir", "string", true, ""}, {"prefix_a", "bool", false, "false"}}, SideEffect: "write", Confirm: false},
 	{Name: "folder_rename undo", Path: "/api/folder_rename/undo", Method: "POST", Params: []Param{{"task_id", "int", false, ""}}, SideEffect: "write", Confirm: false},
-	{Name: "groups semantic", Path: "/api/groups/semantic", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
+	{Name: "groups semantic", Path: "/api/groups/semantic", Method: "GET", Params: groupQueryParams(), SideEffect: "none", Confirm: false},
 	{Name: "video_tags", Path: "/api/video_tags", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "video_tags add", Path: "/api/video_tags", Method: "POST", Params: []Param{{"name", "string", true, ""}, {"match_mode", "string", false, ""}, {"value_source", "string", false, ""}, {"value_pattern", "string", false, ""}, {"join_group", "bool", false, "true"}, {"sort_order", "int", false, "0"}}, SideEffect: "write", Confirm: false},
 	{Name: "video_tags delete", Path: "/api/video_tags", Method: "DELETE", Params: []Param{{"id", "int", true, ""}}, SideEffect: "destructive", Confirm: true},
 	{Name: "video_tags recompute", Path: "/api/video_tags/recompute", Method: "POST", Params: []Param{{"id", "string", false, ""}}, QueryParams: []string{"id"}, SideEffect: "trigger", Confirm: false},
-	{Name: "groups tag", Path: "/api/groups/tag", Method: "GET", Params: []Param{{"tag_id", "int", false, ""}}, SideEffect: "none", Confirm: false},
+	{Name: "groups tag", Path: "/api/groups/tag", Method: "GET", Params: withLeading(Param{"tag_id", "int", false, ""}, groupQueryParams()), SideEffect: "none", Confirm: false},
 	{Name: "search", Path: "/api/search", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "search selection", Path: "/api/search/selection", Method: "POST", Params: []Param{{"q", "string", false, ""}, {"mode", "string", false, ""}, {"case", "bool", false, ""}, {"ext", "string", false, ""}, {"min_size", "int", false, ""}, {"max_size", "int", false, ""}, {"since_ms", "int", false, ""}, {"until_ms", "int", false, ""}, {"dir", "string", false, ""}, {"sort", "string", false, ""}, {"order", "string", false, ""}, {"token", "string", false, ""}, {"offset", "int", false, ""}, {"limit", "int", false, ""}, {"excludes", "json", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "search selection items", Path: "/api/search/selection/items", Method: "POST", Params: []Param{{"q", "string", false, ""}, {"mode", "string", false, ""}, {"case", "bool", false, ""}, {"ext", "string", false, ""}, {"min_size", "int", false, ""}, {"max_size", "int", false, ""}, {"since_ms", "int", false, ""}, {"until_ms", "int", false, ""}, {"dir", "string", false, ""}, {"sort", "string", false, ""}, {"order", "string", false, ""}, {"token", "string", false, ""}, {"offset", "int", false, ""}, {"limit", "int", false, ""}, {"excludes", "json", false, ""}}, SideEffect: "none", Confirm: false},
@@ -137,7 +183,7 @@ var Commands = []Command{
 	{Name: "import", Path: "/api/import", Method: "POST", Params: []Param{{"file", "string", true, ""}, {"name", "string", false, ""}}, Multipart: true, SideEffect: "write", Confirm: false},
 	{Name: "import sessions", Path: "/api/import/sessions", Method: "GET", Params: []Param{{"id", "string", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "import_session delete", Path: "/api/import/sessions", Method: "DELETE", Params: []Param{{"id", "int", true, ""}}, SideEffect: "destructive", Confirm: true},
-	{Name: "import groups", Path: "/api/import/groups", Method: "GET", Params: []Param{{"session_id", "int", true, ""}}, SideEffect: "none", Confirm: false},
+	{Name: "import groups", Path: "/api/import/groups", Method: "GET", Params: []Param{{"session_id", "int", true, ""}, {"page", "int", false, ""}, {"page_size", "int", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "report", Path: "/api/report", Method: "POST", Params: []Param{{"mode", "string", false, ""}, {"marked", "json", false, ""}, {"min_size", "int", false, ""}, {"max_size", "int", false, ""}, {"ext", "string", false, ""}, {"exts", "json", false, ""}, {"q", "string", false, ""}, {"since", "int", false, ""}, {"until", "int", false, ""}, {"n", "int", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "op-snapshots", Path: "/api/op-snapshots", Method: "GET", Params: []Param{{"kind", "string", false, ""}, {"result", "string", false, ""}, {"keyword", "string", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "fs list", Path: "/api/fs/list", Method: "GET", Params: []Param{{"path", "string", false, ""}}, SideEffect: "none", Confirm: false},
@@ -170,7 +216,7 @@ var Commands = []Command{
 	{Name: "health prune", Path: "/api/health/prune", Method: "POST", Params: []Param{{"kind", "string", false, ""}}, SideEffect: "destructive", Confirm: true},
 	{Name: "health ignore", Path: "/api/health/ignore", Method: "POST", Params: []Param{{"kind", "string", false, ""}, {"paths", "json", false, ""}, {"restrict_charset", "bool", false, ""}, {"non_cjk", "bool", false, ""}, {"only_uppercase", "bool", false, ""}, {"force", "bool", false, ""}, {"force_ext", "string", false, ""}, {"dry_run", "bool", false, ""}, {"all", "bool", false, ""}, {"reason", "string", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "index repair", Path: "/api/index/repair", Method: "POST", Params: []Param{{"dry_run", "bool", false, ""}}, SideEffect: "trigger", Confirm: false},
-	{Name: "oplog", Path: "/api/oplog", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
+	{Name: "oplog", Path: "/api/oplog", Method: "GET", Params: []Param{{"action", "string", false, ""}, {"result", "string", false, ""}, {"keyword", "string", false, ""}, {"since", "int", false, ""}, {"until", "int", false, ""}, {"page", "int", false, ""}, {"page_size", "int", false, ""}, {"before_id", "int", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "oplog export", Path: "/api/oplog/export", Method: "POST", Params: []Param{{"action", "string", false, ""}, {"result", "string", false, ""}, {"keyword", "string", false, ""}, {"since", "int", false, ""}, {"until", "int", false, ""}, {"page", "int", false, ""}, {"page_size", "int", false, ""}, {"before_id", "int", false, ""}}, QueryParams: []string{"action", "result", "keyword", "since", "until", "page", "page_size", "before_id"}, SideEffect: "write", Confirm: false},
 	{Name: "oplog clear", Path: "/api/oplog/clear", Method: "POST", Params: []Param{{"before_ts", "int", false, ""}, {"confirm", "bool", false, ""}}, SideEffect: "destructive", Confirm: true},
 	{Name: "op-snapshots unfinished", Path: "/api/op-snapshots/unfinished", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},

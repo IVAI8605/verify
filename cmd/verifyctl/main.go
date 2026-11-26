@@ -27,7 +27,7 @@ func run(args []string, out io.Writer) int {
 	urlFlag := fs.String("url", defaultBaseURL, "Verify 实例地址，例如 http://127.0.0.1:8898")
 	tokenFlag := fs.String("token", "", "访问令牌，仅用于 Authorization: Bearer，不回显")
 	dataDirFlag := fs.String("data-dir", "", "Verify 数据目录，供本地只读辅助使用")
-	fs.String("format", "", "输出格式：table 或 json（一期仅接受，不改写信封）")
+	formatFlag := fs.String("format", "", "输出格式：table 渲染人类可读表格，json（默认）输出 JSON 信封；非 JSON 响应忽略此项")
 	rawFlag := fs.Bool("raw", false, "输出原始响应体")
 	prettyFlag := fs.Bool("pretty", false, "缩进 JSON 响应，不改变字段")
 	helpJSON := fs.Bool("help-json", false, "以 JSON 格式输出帮助")
@@ -135,6 +135,15 @@ func run(args []string, out io.Writer) int {
 	}
 	// raw/thumb 返回文件字节或 JPEG，塞进 JSON 信封会直接编码失败；默认走原始输出。
 	rawMode := *rawFlag || binaryResultCommand(cmd)
+	// --format table：显式渲染人类可读表格；非 JSON / 二进制响应仍原样输出。
+	// 错误信封始终走 writeError 的 JSON，不受 --format 影响。
+	if strings.EqualFold(*formatFlag, "table") && !rawMode {
+		if err := writeTableResult(out, raw); err != nil {
+			fmt.Fprintf(out, "输出表格失败（%v）\n", err)
+			return 1
+		}
+		return 0
+	}
 	if err := writeResult(out, cmd.Name, raw, rawMode, params["pretty"] == "true" && !rawMode); err != nil {
 		fmt.Fprintf(out, "输出结果信封失败（%v）\n", err)
 		return 1
