@@ -118,11 +118,23 @@ func run(args []string, out io.Writer) int {
 		writeError(out, cmd.Name, &ErrDetail{Message: err.Error()})
 		return 1
 	}
-	if err := writeResult(out, cmd.Name, raw, *rawFlag, params["pretty"] == "true"); err != nil {
+	// raw/thumb 返回文件字节或 JPEG，塞进 JSON 信封会直接编码失败；默认走原始输出。
+	rawMode := *rawFlag || binaryResultCommand(cmd)
+	if err := writeResult(out, cmd.Name, raw, rawMode, params["pretty"] == "true" && !rawMode); err != nil {
 		fmt.Fprintf(out, "输出结果信封失败（%v）\n", err)
 		return 1
 	}
 	return 0
+}
+
+// binaryResultCommand 列出返回二进制而非 JSON 的只读路由，这些命令跳过信封。
+func binaryResultCommand(cmd Command) bool {
+	switch cmd.Path {
+	case "/api/raw", "/api/thumb":
+		return true
+	default:
+		return false
+	}
 }
 
 // writeResult 输出信封；--pretty 在信封层做一次缩进，避免 Encoder 把 RawMessage 压回单行。

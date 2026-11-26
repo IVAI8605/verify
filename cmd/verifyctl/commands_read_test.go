@@ -237,6 +237,32 @@ func TestMultiWordCommandDispatch(t *testing.T) {
 	}
 }
 
+// TestBinaryReadCommandRawByDefault 验证 raw/thumb 返回二进制时默认即原样输出，
+// 不塞进 JSON 信封导致退出码 1（--pretty 也不得改写字节）。
+func TestBinaryReadCommandRawByDefault(t *testing.T) {
+	binary := []byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00, 0x01}
+	for _, name := range []string{"raw", "thumb"} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Write(binary)
+			}))
+			defer srv.Close()
+
+			for _, prefix := range [][]string{{"--url", srv.URL}, {"--url", srv.URL, "--pretty"}} {
+				var buf bytes.Buffer
+				code := run(append(prefix, name, "--path", "/vol1/照片.jpg"), &buf)
+				if code != 0 {
+					t.Fatalf("%s 退出码=%d，期望 0；输出=%q", name, code, buf.String())
+				}
+				if !bytes.Equal(buf.Bytes(), binary) {
+					t.Fatalf("%s 输出被改写：得到 %v，期望 %v", name, buf.Bytes(), binary)
+				}
+			}
+		})
+	}
+}
+
 // TestPrettyEnvelopeIndented 验证 --pretty 在信封层仍保留缩进，不被 Encoder 压回单行。
 func TestPrettyEnvelopeIndented(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
