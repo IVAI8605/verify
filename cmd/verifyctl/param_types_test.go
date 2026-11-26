@@ -97,6 +97,73 @@ func TestGetArraysStayString(t *testing.T) {
 	}
 }
 
+// TestTrashPreviewGroupKeysSendsJSONArray 守 trash preview.group_keys：POST body 里必须是真数组。
+func TestTrashPreviewGroupKeysSendsJSONArray(t *testing.T) {
+	cmd, ok := findCommand("trash preview")
+	if !ok {
+		t.Fatal("找不到命令 trash preview")
+	}
+	if typ := paramType(cmd, "group_keys"); typ != "json" {
+		t.Fatalf("trash preview 的 group_keys 类型应为 json，实际 %q", typ)
+	}
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("解析请求体失败：%v", err)
+		}
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "test-token")
+	if _, _, err := c.Do(context.Background(), cmd, map[string]string{
+		"group_keys": `["g1","g2"]`,
+	}); err != nil {
+		t.Fatalf("Do 失败：%v", err)
+	}
+	arr, ok := got["group_keys"].([]any)
+	if !ok || len(arr) != 2 || arr[0] != "g1" || arr[1] != "g2" {
+		t.Fatalf("group_keys 未以 JSON 数组发送：%T %#v", got["group_keys"], got["group_keys"])
+	}
+}
+
+// TestSettingsArrayAndObjectFields 守 settings 的数组/对象字段：数组字段以真数组、对象字段以真对象进 body。
+func TestSettingsArrayAndObjectFields(t *testing.T) {
+	cmd, ok := findCommand("settings")
+	if !ok {
+		t.Fatal("找不到命令 settings")
+	}
+	for _, name := range []string{"protect_paths", "match_kinds", "exclude_dirs", "volumes", "search_rules", "search_presets"} {
+		if typ := paramType(cmd, name); typ != "json" {
+			t.Errorf("settings.%s 类型应为 json，实际 %q", name, typ)
+		}
+	}
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("解析请求体失败：%v", err)
+		}
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "test-token")
+	if _, _, err := c.Do(context.Background(), cmd, map[string]string{
+		"protect_paths": `["/p1","/p2"]`,
+		"exclude_dirs":  `["/d1"]`,
+		"search_rules":  `{"ignore_case":true}`,
+	}); err != nil {
+		t.Fatalf("Do 失败：%v", err)
+	}
+	if arr, ok := got["protect_paths"].([]any); !ok || len(arr) != 2 {
+		t.Fatalf("protect_paths 未以数组发送：%T %#v", got["protect_paths"], got["protect_paths"])
+	}
+	if arr, ok := got["exclude_dirs"].([]any); !ok || len(arr) != 1 {
+		t.Fatalf("exclude_dirs 未以数组发送：%T %#v", got["exclude_dirs"], got["exclude_dirs"])
+	}
+	if obj, ok := got["search_rules"].(map[string]any); !ok || obj["ignore_case"] != true {
+		t.Fatalf("search_rules 未以对象发送：%T %#v", got["search_rules"], got["search_rules"])
+	}
+}
+
 // paramType 返回命令里某参数声明的类型，找不到返回空串。
 func paramType(cmd Command, name string) string {
 	for _, p := range cmd.Params {
