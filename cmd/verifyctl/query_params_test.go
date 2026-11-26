@@ -74,6 +74,97 @@ func TestGroupFamilyDeclareGroupQueryParams(t *testing.T) {
 	assertParams(t, "groups intro", map[string]string{"n": "int"})
 }
 
+// TestGroupSpecialParamsComeFirst 守 I5：专属参数必须排声明首位，
+// 否则位置参数按序填充会错位（`groups intro 10` 会静默落成 page_size=10）。
+func TestGroupSpecialParamsComeFirst(t *testing.T) {
+	cases := map[string]string{
+		"groups":       "mode",
+		"groups intro": "n",
+		"groups fuzzy": "near",
+		"groups tag":   "tag_id",
+		"groups photo": "threshold",
+	}
+	for cmdName, wantFirst := range cases {
+		cmd, ok := findCommand(cmdName)
+		if !ok {
+			t.Fatalf("注册表缺少命令 %s", cmdName)
+		}
+		if len(cmd.Params) == 0 {
+			t.Fatalf("%s 不应无参数", cmdName)
+		}
+		if got := cmd.Params[0].Name; got != wantFirst {
+			t.Errorf("%s 的首个参数应为 %s（专属参数在前），实际 %s", cmdName, wantFirst, got)
+		}
+	}
+}
+
+// TestGroupsIntroPositionalFillsN 守 I5 的运行时后果：位置参数 10 必须落到 n，不是 page_size。
+func TestGroupsIntroPositionalFillsN(t *testing.T) {
+	cmd, ok := findCommand("groups intro")
+	if !ok {
+		t.Fatal("注册表缺少 groups intro")
+	}
+	params, err := parseCommandParams(cmd, []string{"10"})
+	if err != nil {
+		t.Fatalf("解析位置参数失败：%v", err)
+	}
+	if params["n"] != "10" {
+		t.Errorf("位置参数应填 n=10，实际 n=%q", params["n"])
+	}
+	if params["page_size"] != "" {
+		t.Errorf("page_size 不应被位置参数占用，实际 %q", params["page_size"])
+	}
+}
+
+// TestPhotoFolderDeclareRealParams 守 I8：photo / folder 只声明 handler 真实读取的参数。
+// photo（photo.go:26）读 threshold + sortGroupsQ 的 sort/order + 标签过滤；
+// folder（media.go:40）读 sort/order + 标签过滤，两者都不调 groupQuery、不读分页。
+func TestPhotoFolderDeclareRealParams(t *testing.T) {
+	assertParams(t, "groups photo", map[string]string{
+		"threshold": "int", "sort": "string", "order": "string",
+		"tag_name": "string", "tag_value": "string",
+	})
+	assertParams(t, "groups folder", map[string]string{
+		"sort": "string", "order": "string",
+		"tag_name": "string", "tag_value": "string",
+	})
+
+	// 不得超声明：这两个 handler 不调 groupQuery，故不该出现 min_size/q 等共享过滤参数。
+	sharedOnly := []string{"min_size", "max_kb", "since_ms", "until_ms", "q", "ext", "exts", "page", "page_size"}
+	for _, name := range []string{"groups photo", "groups folder"} {
+		cmd, _ := findCommand(name)
+		for _, p := range sharedOnly {
+			if paramType(cmd, p) != "" {
+				t.Errorf("%s 不该声明未读取的参数 %s", name, p)
+			}
+		}
+	}
+}
+
+// TestPhotoThresholdReachesQuery 守 I8：photo 的 threshold 真的进查询串。
+func TestPhotoThresholdReachesQuery(t *testing.T) {
+	cmd, ok := findCommand("groups photo")
+	if !ok {
+		t.Fatal("注册表缺少 groups photo")
+	}
+	var query url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query()
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "t")
+	if _, err := runReadCommand(context.Background(), c, cmd, map[string]string{"threshold": "12", "sort": "waste", "order": "asc"}); err != nil {
+		t.Fatalf("执行失败：%v", err)
+	}
+	for k, want := range map[string]string{"threshold": "12", "sort": "waste", "order": "asc"} {
+		if query.Get(k) != want {
+			t.Errorf("查询串缺 %s=%s（实际 %q）：%v", k, want, query.Get(k), query)
+		}
+	}
+}
+
 // TestOpLogDeclareQueryParams 守 /api/oplog（opQueryFromRequest）声明齐全。
 func TestOpLogDeclareQueryParams(t *testing.T) {
 	assertParams(t, "oplog", map[string]string{

@@ -75,8 +75,9 @@ func groupsParams() []Param {
 	return append(p, Param{"cross", "bool", false, ""})
 }
 
-// withLeading 在共享分组过滤参数前插入命令专属的前置参数（如 near / tag_id），
-// 返回新切片，避免多个命令并发 appending 伤害底层数组。
+// withLeading 在共享分组过滤参数前插入命令专属的前置参数（如 near / tag_id / n），
+// 返回新切片：保持专属参数排在首位，便于位置参数按声明顺序填充（`groups intro 10` 落 n 而非 page_size），
+// 同时避免多个命令并发 appending 伤害底层数组。
 func withLeading(lead Param, rest []Param) []Param {
 	out := make([]Param, 0, len(rest)+1)
 	out = append(out, lead)
@@ -97,8 +98,10 @@ var Commands = []Command{
 	{Name: "groups", Path: "/api/groups", Method: "GET", Params: groupsParams(), SideEffect: "none", Confirm: false},
 	{Name: "folder stats", Path: "/api/folder/stats", Method: "GET", Params: []Param{{"path", "string", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "groups video", Path: "/api/groups/video", Method: "GET", Params: groupQueryParams(), SideEffect: "none", Confirm: false},
-	{Name: "groups intro", Path: "/api/groups/intro", Method: "GET", Params: append(groupQueryParams(), Param{"n", "int", false, ""}), SideEffect: "none", Confirm: false},
-	{Name: "groups photo", Path: "/api/groups/photo", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
+	{Name: "groups intro", Path: "/api/groups/intro", Method: "GET", Params: withLeading(Param{"n", "int", false, ""}, groupQueryParams()), SideEffect: "none", Confirm: false},
+	// photo 走 photo.go:26 的 threshold(int) + sortGroupsQ 的 sort/order + attachTagsForPage 的标签过滤；
+	// 它不调 groupQuery，故只声明实际读取的这 5 项，不套共享全集。
+	{Name: "groups photo", Path: "/api/groups/photo", Method: "GET", Params: withLeading(Param{"threshold", "int", false, ""}, []Param{{"sort", "string", false, ""}, {"order", "string", false, ""}, {"tag_name", "string", false, ""}, {"tag_value", "string", false, ""}}), SideEffect: "none", Confirm: false},
 	{Name: "relink preview", Path: "/api/relink/preview", Method: "POST", Params: []Param{{"keep", "string", false, ""}, {"paths", "json", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "relink", Path: "/api/relink", Method: "POST", Params: []Param{{"keep", "string", false, ""}, {"paths", "json", false, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "big", Path: "/api/big", Method: "GET", Params: []Param{{"limit", "int", false, ""}, {"order", "string", false, ""}, {"crop", "string", false, ""}}, SideEffect: "none", Confirm: false},
@@ -125,7 +128,9 @@ var Commands = []Command{
 	{Name: "transcode residue", Path: "/api/transcode/residue", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "transcode residue clean", Path: "/api/transcode/residue/clean", Method: "POST", Params: []Param{{"paths", "json", false, ""}}, SideEffect: "destructive", Confirm: true},
 	{Name: "groups audio", Path: "/api/groups/audio", Method: "GET", Params: groupQueryParams(), SideEffect: "none", Confirm: false},
-	{Name: "groups folder", Path: "/api/groups/folder", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
+	// folder 走 media.go:40 handleFolderGroups：sortGroupsQ 的 sort/order + attachTagsForPage 的标签过滤，
+	// 不调 groupQuery、不读分页，故只声明这 4 项。
+	{Name: "groups folder", Path: "/api/groups/folder", Method: "GET", Params: []Param{{"sort", "string", false, ""}, {"order", "string", false, ""}, {"tag_name", "string", false, ""}, {"tag_value", "string", false, ""}}, SideEffect: "none", Confirm: false},
 	{Name: "groups fuzzy", Path: "/api/groups/fuzzy", Method: "GET", Params: withLeading(Param{"near", "string", false, ""}, groupQueryParams()), SideEffect: "none", Confirm: false},
 	{Name: "folder_rename preview", Path: "/api/folder_rename/preview", Method: "POST", Params: []Param{{"dir", "string", false, ""}, {"prefix_a", "bool", false, "false"}}, SideEffect: "none", Confirm: false},
 	{Name: "folder_rename", Path: "/api/folder_rename", Method: "POST", Params: []Param{{"dir", "string", true, ""}, {"prefix_a", "bool", false, "false"}}, SideEffect: "write", Confirm: false},

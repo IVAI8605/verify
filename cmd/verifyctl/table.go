@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode"
 )
 
-// tableArrayKeys 是对象里「常见承载列表的字段名」的优先顺序。
-// 对象命中其中之一且值是对象数组时，就把该数组渲染成表格；都没有才退回 key/value。
+// tableArrayKeys 是对象里「常见承载列表的字段名」的白名单。
+// 只认这组名字：命中且值是对象数组时才把该数组渲染成表格，
+// 不命中一律回退缩进 JSON——绝不按字典序瞎挑一个数组，
+// 否则 status 这类响应的 volumes 会把 state/counts/version 全部吞掉。
 var tableArrayKeys = []string{
 	"items", "groups", "plans", "batches", "history", "runs", "files",
 	"results", "sessions", "peers", "candidates", "jobs", "tasks", "snapshots",
@@ -25,15 +25,18 @@ const tableCellMaxRunes = 48
 // tableColumnGap 是列与列之间的固定间隔空格数。
 const tableColumnGap = 2
 
-// renderTable 把响应 data（已确认是合法 JSON）渲染成人类可读表格。
-// 规则：
-//   - 数组对象 → 按并集列名渲染表格；
-//   - 对象里含常见数组字段 → 渲染该数组；
-//   - 其它对象 → key/value 两列；
-//   - 无法表格化（标量、空数组、非对象元素等）→ 退回缩进 JSON。
+// renderTable 把响应 data 渲染成人类可读表格。
+// 规则（与 spec §3 一致）：
+//   - 对象数组 → 按并集列名渲染表格；
+//   - 对象里命中 tableArrayKeys 白名单且值是对象数组 → 渲染该数组；
+//   - 其它一切（无数组、白名单外数组、标量、空数组、混合数组）→ 缩进 JSON 回退。
+//
+// 解码用 UseNumber()，保证 int64 级数值（纳秒 mtime、total_size）不丢精度、不变科学计数法。
 func renderTable(w io.Writer, data json.RawMessage) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	var v any
-	if err := json.Unmarshal(data, &v); err != nil {
+	if err := dec.Decode(&v); err != nil {
 		return writeJSONFallback(w, data)
 	}
 	switch typed := v.(type) {
@@ -48,7 +51,8 @@ func renderTable(w io.Writer, data json.RawMessage) error {
 				return writeObjectTable(w, objs)
 			}
 		}
-		return writeKeyValues(w, typed)
+		// 非表格化对象一律回退 JSON：自造 key/value 表会截断长值且 exit 0 无提示。
+		return writeJSONFallback(w, data)
 	default:
 		return writeJSONFallback(w, data)
 	}
@@ -70,24 +74,14 @@ func asObjectSlice(arr []any) ([]map[string]any, bool) {
 	return objs, true
 }
 
-// findArrayField 依次在常见字段名、再在其余字段里找第一个数组值。
+// findArrayField 只按 tableArrayKeys 白名单顺序找第一个对象数组。
+// 刻意不做「任意数组」兜底：那等于替用户挑字段，会静默丢掉其余字段。
 func findArrayField(obj map[string]any) ([]any, bool) {
 	for _, key := range tableArrayKeys {
 		if raw, ok := obj[key]; ok {
 			if arr, ok := raw.([]any); ok {
 				return arr, true
 			}
-		}
-	}
-	// 兜底：按 key 字典序找任意数组字段，保证结果确定。
-	keys := make([]string, 0, len(obj))
-	for k := range obj {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if arr, ok := obj[key].([]any); ok {
-			return arr, true
 		}
 	}
 	return nil, false
@@ -119,22 +113,6 @@ func writeObjectTable(w io.Writer, objs []map[string]any) error {
 			row[i] = formatCell(o[c])
 		}
 		rows = append(rows, row)
-	}
-	return writeAlignedRows(w, rows)
-}
-
-// writeKeyValues 把没有列表字段的对象写成「key - value」两列，值非标量时紧凑 JSON 化后截断。
-func writeKeyValues(w io.Writer, obj map[string]any) error {
-	keys := make([]string, 0, len(obj))
-	for k := range obj {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	rows := make([][]string, 0, len(keys)+1)
-	rows = append(rows, []string{"key", "value"})
-	for _, k := range keys {
-		rows = append(rows, []string{k, formatCell(obj[k])})
 	}
 	return writeAlignedRows(w, rows)
 }
@@ -223,6 +201,8 @@ func isWideRune(r rune) bool {
 
 // formatCell 把单个 JSON 值转成紧凑、单行的展示文本：标量直出，数组/对象转紧凑 JSON，
 // 统一把换行/制表符折成空格并按 rune 截断。
+// json.Number（UseNumber 解码产物）优先按 int64 原样输出，
+// 保证 1.76e18 级纳秒时间戳与 >2^53 的大整数既不丢精度也不变科学计数法。
 func formatCell(v any) string {
 	var s string
 	switch x := v.(type) {
@@ -231,12 +211,16 @@ func formatCell(v any) string {
 	case string:
 		s = x
 	case bool:
-		s = strconv.FormatBool(x)
-	case float64:
-		if x == math.Trunc(x) && math.Abs(x) < 1e15 {
-			s = strconv.FormatInt(int64(x), 10)
+		if x {
+			s = "true"
 		} else {
-			s = strconv.FormatFloat(x, 'g', -1, 64)
+			s = "false"
+		}
+	case json.Number:
+		if n, err := x.Int64(); err == nil {
+			s = fmt.Sprintf("%d", n)
+		} else {
+			s = x.String()
 		}
 	default:
 		raw, err := json.Marshal(x)
@@ -272,10 +256,16 @@ func writeJSONFallback(w io.Writer, data json.RawMessage) error {
 	return err
 }
 
-// writeTableResult 是 --format table 的入口：空的或非合法 JSON 原样写出（与信封模式兜底一致），
-// 其余交给 renderTable。
+// writeTableResult 是 --format table 的入口：
+//   - 空响应体补 "{}"，避免写出 0 字节让调用方无从判断；
+//   - 非合法 JSON（导出类 CSV/HTML/纯文本）原样写出，绝不改写；
+//   - 其余交给 renderTable。
 func writeTableResult(w io.Writer, raw []byte) error {
-	if len(raw) == 0 || !json.Valid(raw) {
+	if len(raw) == 0 {
+		_, err := io.WriteString(w, "{}\n")
+		return err
+	}
+	if !json.Valid(raw) {
 		_, err := w.Write(raw)
 		return err
 	}

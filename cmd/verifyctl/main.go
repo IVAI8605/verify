@@ -36,6 +36,9 @@ func run(args []string, out io.Writer) int {
 		fmt.Fprintln(out, "用法：verifyctl [全局参数] <子命令> [命令参数]")
 		fmt.Fprintln(out, "全局参数：")
 		fs.PrintDefaults()
+		fmt.Fprintln(out, "注意：--format/--raw/--pretty 等全局参数必须放在子命令之前，")
+		fmt.Fprintln(out, "      放在子命令之后会被当作命令参数解析失败（如 `verifyctl groups --format table` 请写成")
+		fmt.Fprintln(out, "      `verifyctl --format table groups`）。")
 	}
 
 	if err := fs.Parse(args); err != nil {

@@ -56,17 +56,101 @@ func TestTableNestedArrayField(t *testing.T) {
 	}
 }
 
-// TestTableKeyValueObject 验证没有数组字段的对象退回 key/value 两列。
-func TestTableKeyValueObject(t *testing.T) {
+// TestTableNonTabularObjectFallsBackToJSON 守 C1：没有白名单数组字段的对象必须回退缩进 JSON，
+// 不得自造 key/value 表（那会截断 48 rune 以上的值、exit 0 无提示丢数据）。
+func TestTableNonTabularObjectFallsBackToJSON(t *testing.T) {
 	raw := json.RawMessage(`{"ok":true,"version":"5.0.0","pid":1234}`)
 	var buf bytes.Buffer
 	if err := writeTableResult(&buf, raw); err != nil {
-		t.Fatalf("渲染 key/value 失败：%v", err)
+		t.Fatalf("渲染失败：%v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{"key", "value", "version", "5.0.0", "pid", "1234"} {
+	if strings.Contains(out, "key") && strings.Contains(out, "value") {
+		t.Fatalf("非表格化对象不得自造 key/value 表：\n%s", out)
+	}
+	if !json.Valid([]byte(out)) {
+		t.Fatalf("回退结果不是合法 JSON：%q", out)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("回退 JSON 解析失败：%v", err)
+	}
+	// 所有原始字段必须完整保留（含数值类型与字符串原文）。
+	if got["version"] != "5.0.0" {
+		t.Errorf("version 丢失或被改写：%#v", got["version"])
+	}
+	if n, ok := got["pid"].(float64); !ok || n != 1234 {
+		t.Errorf("pid 丢失或被改写：%#v", got["pid"])
+	}
+	if got["ok"] != true {
+		t.Errorf("ok 丢失或被改写：%#v", got["ok"])
+	}
+}
+
+// TestTableNonTabularLongValueNotTruncated 守 C1 的数据完整性：长值在 JSON 回退里一字不少。
+func TestTableNonTabularLongValueNotTruncated(t *testing.T) {
+	long := strings.Repeat("长", tableCellMaxRunes+200)
+	raw, err := json.Marshal(map[string]any{"ok": true, "detail": long})
+	if err != nil {
+		t.Fatalf("构造测试数据失败：%v", err)
+	}
+	var buf bytes.Buffer
+	if err := writeTableResult(&buf, raw); err != nil {
+		t.Fatalf("渲染失败：%v", err)
+	}
+	if !strings.Contains(buf.String(), long) {
+		t.Fatalf("非表格化对象的长值被截断了（长度 %d）：\n%s", len([]rune(long)), buf.String())
+	}
+	if strings.Contains(buf.String(), "…") {
+		t.Fatalf("JSON 回退不应出现截断省略号：\n%s", buf.String())
+	}
+}
+
+// TestTableWhitelistOnlyArrayField 守 I2：只认 tableArrayKeys 白名单，不得按字典序瞎挑数组。
+// status 响应里 volumes 是字典序靠前的数组，旧实现会把 state/counts/version 全吞掉。
+func TestTableWhitelistOnlyArrayField(t *testing.T) {
+	raw := json.RawMessage(`{"ok":true,"state":"idle","version":"5.0.0","counts":{"files":10},"volumes":[{"path":"/vol1"},{"path":"/vol2"}]}`)
+	var buf bytes.Buffer
+	if err := writeTableResult(&buf, raw); err != nil {
+		t.Fatalf("渲染失败：%v", err)
+	}
+	out := buf.String()
+	if !json.Valid([]byte(out)) {
+		t.Fatalf("白名单外数组应回退 JSON，实际输出：%q", out)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("回退 JSON 解析失败：%v", err)
+	}
+	// 一个字段都不能丢：这是 I2 的实测失败点（910 字节 → 33 字节）。
+	for _, key := range []string{"ok", "state", "version", "counts", "volumes"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("字段 %s 被吞掉了：%#v", key, got)
+		}
+	}
+	if len(out) < 100 {
+		t.Fatalf("输出被压缩到 %d 字节，疑似又按字典序挑了 volumes：%q", len(out), out)
+	}
+}
+
+// TestTableBigIntegerPrecision 守 I3：int64 级数值（纳秒 mtime、>2^53 大整数）不得变科学计数法或丢精度。
+func TestTableBigIntegerPrecision(t *testing.T) {
+	const mtime = "1764297600123456789" // ~1.76e18 纳秒
+	const bigSize = "9007199254740993"  // 2^53+1，float64 无法精确表示
+	raw := json.RawMessage(`[{"path":"/a","mtime":` + mtime + `,"size":` + bigSize + `}]`)
+	var buf bytes.Buffer
+	if err := writeTableResult(&buf, raw); err != nil {
+		t.Fatalf("渲染失败：%v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{mtime, bigSize} {
 		if !strings.Contains(out, want) {
-			t.Errorf("key/value 输出缺 %q：\n%s", want, out)
+			t.Errorf("大整数 %s 未原样输出：\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{"e+", "E+", "1.7642976001234568e", "9007199254740992"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("大整数出现科学计数法/精度丢失（含 %q）：\n%s", bad, out)
 		}
 	}
 }
@@ -143,22 +227,60 @@ func TestTableFormatWiring(t *testing.T) {
 	}
 }
 
-// TestTableWideCharAlignment 验证中文/全角字符按双宽计算列宽，表格不错位。
+// TestTableWideCharAlignment 验证中文/全角字符按双宽计算列宽，后续列不错位。
+//
+// 刻意用「golden 行文本 + 独立数空格」两种断言，而不用 displayWidth 去量输出：
+// 旧版拿 displayWidth 量自己，一旦 displayWidth 退化成 rune 计数，误差两边抵消、
+// 测试恒 PASS（空转）。这里数的是字面空格个数，与被测函数无耦合。
 func TestTableWideCharAlignment(t *testing.T) {
-	raw := json.RawMessage(`[{"name":"电影A","n":1},{"name":"剧集BB","n":2}]`)
+	raw := json.RawMessage(`[{"name":"电影","size":1},{"name":"abc","size":2}]`)
 	var buf bytes.Buffer
 	if err := writeTableResult(&buf, raw); err != nil {
 		t.Fatalf("渲染失败：%v", err)
 	}
-	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	out := buf.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) != 3 {
-		t.Fatalf("期望表头+2 行，实际 %d 行：\n%s", len(lines), buf.String())
+		t.Fatalf("期望表头+2 行，实际 %d 行：\n%s", len(lines), out)
 	}
-	// 「电影A」显示宽 5、「剧集BB」显示宽 6，故第二行要比第一行多补 1 个空格才对齐 n 列。
-	idxA := displayWidth(lines[1][:strings.Index(lines[1], "1")])
-	idxB := displayWidth(lines[2][:strings.Index(lines[2], "2")])
-	if idxA != idxB {
-		t.Fatalf("中文列未按显示宽度对齐：第一行 %d 列，第二行 %d 列\n%s", idxA, idxB, buf.String())
+
+	// name 列显示宽 = max("name"=4, "电影"=4, "abc"=3) = 4，加 2 列间隔 → size 起于第 6 列。
+	// 「电影」已占 4 列，故只补 2 个空格；「abc」占 3 列，需补 3 个空格。
+	// 按 rune 数补空的错误实现会给「电影」补 4 个空格，下面两条 golden 立刻红。
+	wantLines := []string{
+		"name  size",
+		"电影  1",
+		"abc   2",
+	}
+	for i, want := range wantLines {
+		if lines[i] != want {
+			t.Errorf("第 %d 行不符：得到 %q，期望 %q\n完整输出：\n%s", i, lines[i], want, out)
+		}
+	}
+
+	// 独立复核：CJK 单元格后必须恰好 2 个空格（不是按 rune 数算出的 4 个）。
+	afterCJK := strings.TrimPrefix(lines[1], "电影")
+	if pad := len(afterCJK) - len(strings.TrimLeft(afterCJK, " ")); pad != 2 {
+		t.Errorf("「电影」后补了 %d 个空格，期望 2（双宽字符应按 2 列计）", pad)
+	}
+	// 窄字符单元格后必须恰好 3 个空格。
+	afterASCII := strings.TrimPrefix(lines[2], "abc")
+	if pad := len(afterASCII) - len(strings.TrimLeft(afterASCII, " ")); pad != 3 {
+		t.Errorf("「abc」后补了 %d 个空格，期望 3", pad)
+	}
+}
+
+// TestTableEmptyResponse 守 #7：空响应体补 "{}"，不写 0 字节。
+func TestTableEmptyResponse(t *testing.T) {
+	var buf bytes.Buffer
+	if err := writeTableResult(&buf, nil); err != nil {
+		t.Fatalf("渲染失败：%v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("空响应不应写出 0 字节")
+	}
+	if !json.Valid(buf.Bytes()) {
+		t.Fatalf("空响应占位不是合法 JSON：%q", buf.String())
 	}
 }
 
