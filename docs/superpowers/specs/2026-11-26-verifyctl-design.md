@@ -91,7 +91,8 @@ Verify 目前只有内嵌 Web UI，没有命令行入口。需求是让 AI（以
 
 ## 完成状态（2026-11-26，Task 10 收口）
 - 全量接线：命令表 132 条 `Command`，`Run` 全部非空（`TestAllCommandsImplemented` 断言，防截断）。
-- 路由覆盖：`server.go` 130 条 `mux.HandleFunc`，减去静态豁免 `/`、`/ui/`、`/favicon.ico` 后 **127 条非静态路径全部覆盖**；命令表去重路径 127 个与之双向相等，132 条命令 = 127 路径 + 5 条同路径多方法（`TestCoverageCount`）。
+- 路由覆盖（路径级）：`server.go` 130 条 `mux.HandleFunc`，减去静态豁免 `/`、`/ui/`、`/favicon.ico` 后 **127 条非静态路径全部覆盖**；命令表去重路径 127 个与之双向相等（`TestCoverageCount`，仅断言路径级）。
+- 方法级覆盖：由 `TestSecondaryMethodCommandsCovered` 兜底，固定校验 5 条次要方法（`video_tags` POST/DELETE、`sync/peers` DELETE、`import/sessions` DELETE、`rename/presets/` PUT）；`TestCoverageCount` **不证明**方法级覆盖（`server.go` 方法判定在各 handler 内部，源码无机器可读的 `(path,method)` 集合）。
 - fpk 打包：`scripts/build-fpk.sh` 在主二进制之后以相同平台/ldflags 构建 `verifyctl` 到 `packaging/fpk/app/bin/verifyctl`；实测 `dist/verify-4.2.2.fpk` 内含 `bin/verify` 与 `bin/verifyctl` 两个可执行文件。
 - 本地构建：`bash scripts/build-cli.sh` 产出 `dist/verifyctl-4.2.2` 及 `.sha256`。
 - 测试：`go test ./cmd/verifyctl/... -count=1` 全绿；`scripts/quick-check.sh` 8 项全过（gofmt/vet/前端语法/前端类型/类型契约/单测/文档断言/公开把关）。
