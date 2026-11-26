@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 // wouldDo 描述一次 dry-run 将会执行的动作，只含本地元信息，绝不回显令牌。
@@ -112,7 +113,8 @@ func marshalDryRun(name, method, path string, request map[string]string, pretty 
 			Command: name,
 			Method:  method,
 			Path:    path,
-			Params:  clean,
+			// 展示层对敏感参数脱敏；不影响真实发送（发送走 request，非 clean）。
+			Params: redactSensitiveParams(clean),
 		},
 	})
 	if err != nil {
@@ -125,4 +127,32 @@ func marshalDryRun(name, method, path string, request map[string]string, pretty 
 		}
 	}
 	return out, nil
+}
+
+// sensitiveParamName 判断参数名是否属于密钥类字段（令牌/口令等）：
+// 展示 dry-run 时必须脱敏，防止 `settings --access_token xxx` 把明文令牌打进输出（I4）。
+func sensitiveParamName(name string) bool {
+	lower := strings.ToLower(name)
+	if strings.Contains(lower, "token") || strings.Contains(lower, "secret") ||
+		strings.Contains(lower, "password") || lower == "authorization" {
+		return true
+	}
+	return false
+}
+
+// redactSensitiveParams 返回脱敏后的副本：敏感参数值替换为 <redacted>。
+// 只用于 dry-run 的 would_do 展示层，绝不参与真实请求组装或确认令牌计算。
+func redactSensitiveParams(params map[string]string) map[string]string {
+	if len(params) == 0 {
+		return params
+	}
+	out := make(map[string]string, len(params))
+	for k, v := range params {
+		if sensitiveParamName(k) {
+			out[k] = "<redacted>"
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }

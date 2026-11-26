@@ -111,7 +111,9 @@ func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) 
 		if filePath != "" {
 			f, err := os.Open(filePath)
 			if err != nil {
-				return nil, 0, fmt.Errorf("打开上传文件失败（%v）", err)
+				// 本地上传文件打不开是用法/输入错误（用户给的路径不对），
+				// 不是连接层失败：返回 usageError 让入口映射退出码 2 而非 4（#6）。
+				return nil, 0, &usageError{msg: "打开上传文件失败：" + err.Error()}
 			}
 			part, perr := mw.CreateFormFile(multipartFileParam, filepath.Base(filePath))
 			if perr != nil {

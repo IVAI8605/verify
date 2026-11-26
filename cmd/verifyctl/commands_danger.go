@@ -124,13 +124,15 @@ func marshalDangerDryRun(cmd Command, method, displayPath string, request map[st
 		}
 		clean[k] = v
 	}
+	// 确认令牌必须用【未脱敏】的 clean 计算，与执行时 makeConfirmToken(cmd, params) 同口径；
+	// 否则脱敏后的令牌对不上。脱敏只作用于 would_do 的展示副本。
 	out, err := json.Marshal(dangerDryRunResult{
 		DryRun: true,
 		WouldDo: wouldDo{
 			Command: cmd.Name,
 			Method:  method,
 			Path:    displayPath,
-			Params:  clean,
+			Params:  redactSensitiveParams(clean),
 		},
 		// 令牌只基于命令模板身份 + 业务参数 + 时间片，与执行时校验口径一致。
 		ConfirmToken: makeConfirmToken(cmd, clean),

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -110,7 +111,13 @@ func run(args []string, out io.Writer) int {
 	// /api/events 是 SSE 无限心跳流，不能用 io.ReadAll（会阻塞到超时再失败、拿不到事件）。
 	// 走流式逐行输出到 stdout，Ctrl+C（SIGINT/SIGTERM）优雅停止并退出 0。
 	if cmd.Path == "/api/events" {
-		return runEventStream(out, *urlFlag, token)
+		// events 命令自身声明了 --token；优先用它，回退全局 --token。
+		// （此前只取全局 token，命令级 --token 被静默丢弃 —— I3）
+		evToken := params["token"]
+		if evToken == "" {
+			evToken = token
+		}
+		return runEventStream(out, *urlFlag, evToken)
 	}
 
 	c := NewClient(*urlFlag, token)
@@ -218,14 +225,27 @@ func parseCommandParams(cmd Command, args []string) (map[string]string, error) {
 	fs := flag.NewFlagSet(cmd.Name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
-	values := make(map[string]*string, len(cmd.Params))
+	// bool 参数注册为开关（--quick 无值即 true，--quick=false 显式关）；
+	// 其余 string/int/float/json 仍是取值 flag。旧写法把 bool 也当 fs.String，
+	// 导致 `scan --quick` 报「flag needs an argument」、`folder_rename --prefix_a --yes`
+	// 把 --yes 当作 prefix_a 的值吞掉（I1：静默损坏）。setByFlag 仍用 fs.Visit，
+	// 从而区分「--flag=false」与「根本没设」。
+	strValues := make(map[string]*string, len(cmd.Params)+1)
+	boolValues := make(map[string]*bool, len(cmd.Params))
 	for _, p := range cmd.Params {
-		values[p.Name] = fs.String(p.Name, p.Default, "")
+		if p.Type == "bool" {
+			boolValues[p.Name] = fs.Bool(p.Name, p.Default == "true", "")
+			continue
+		}
+		strValues[p.Name] = fs.String(p.Name, p.Default, "")
 	}
 	// index repair / health rename / health ignore 的 dry_run 是真实业务参数，
 	// 同时接受下划线写法；本地 --dry-run 改存 __cli_dry_run，二者互不覆盖。
-	if _, exists := values["dry_run"]; !exists {
-		values["dry_run"] = fs.String("dry_run", "", "")
+	// 注册表已声明就不重复注册（否则 flag 重名 panic），否则补一个字符串兜底。
+	if _, ok := strValues["dry_run"]; !ok {
+		if _, ok := boolValues["dry_run"]; !ok {
+			strValues["dry_run"] = fs.String("dry_run", "", "")
+		}
 	}
 
 	pretty := fs.Bool("pretty", false, "")
@@ -245,10 +265,15 @@ func parseCommandParams(cmd Command, args []string) (map[string]string, error) {
 	// 声明参数里的空默认值（含并未出现的 bool/int/json）一律不发，否则服务端把
 	// `watch:""` 解成 *bool、`group_keys:""` 解成 []string 会直接 400。
 	// 提供方式有二：--flag 显式指定（setByFlag），或作为位置参数给出（见下方循环）。
-	params := make(map[string]string, len(values)+5)
-	for name := range values {
+	params := make(map[string]string, len(strValues)+len(boolValues)+5)
+	for name := range strValues {
 		if setByFlag[name] {
-			params[name] = *values[name]
+			params[name] = *strValues[name]
+		}
+	}
+	for name := range boolValues {
+		if setByFlag[name] {
+			params[name] = strconv.FormatBool(*boolValues[name])
 		}
 	}
 	if *pretty {
@@ -272,6 +297,11 @@ func parseCommandParams(cmd Command, args []string) (map[string]string, error) {
 	// 位置参数按注册表声明顺序填给未被 flag 显式赋值的参数。
 	next := 0
 	for _, pos := range fs.Args() {
+		// Go flag 在第一个非 flag 处停止解析，其后的 `-x` 会落进位置参数里被静默当值。
+		// 明确拒绝以 - 开头的残留位置参数，防止 I1 那类「flag 被当值吞掉」的静默损坏。
+		if strings.HasPrefix(pos, "-") {
+			return nil, fmt.Errorf("参数须置于位置参数之前（检测到位置参数 %q 以 - 开头，疑似被当成取值吞掉）", pos)
+		}
 		for next < len(cmd.Params) && setByFlag[cmd.Params[next].Name] {
 			next++
 		}
