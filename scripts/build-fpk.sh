@@ -49,6 +49,12 @@ fi
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "-s -w" \
 	-o packaging/fpk/app/bin/verify .
 
+# 同时构建 verifyctl CLI 进包：平台/静态参数与主二进制一致，版本号用 -X main.version 注入
+# （CLI 的 version 是独立 var，不改动主程序 5 处版本号）。放进 app/bin 与 verify 并排。
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath \
+	-ldflags "-s -w -X main.version=$VERSION" \
+	-o packaging/fpk/app/bin/verifyctl ./cmd/verifyctl
+
 mkdir -p dist
 # fnpack 只能把 fpk 输出到当前工作目录，因此从 dist/ 调用。
 cd dist
