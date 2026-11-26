@@ -21,6 +21,16 @@ type usageError struct{ msg string }
 
 func (e *usageError) Error() string { return e.msg }
 
+// commandDeclaresParam 判断命令是否声明了指定名字的参数（用于 destructive 的 confirm 自动注入）。
+func commandDeclaresParam(cmd Command, name string) bool {
+	for _, p := range cmd.Params {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func init() {
 	// 所有 destructive 命令接入「dry-run 签发确认令牌 + --yes 与 --confirm-token 双门槛」执行器。
 	for i := range Commands {
@@ -47,6 +57,20 @@ func init() {
 func runDangerCommand(ctx context.Context, c *Client, cmd Command, params map[string]string, confirmToken string) ([]byte, error) {
 	if c == nil {
 		return nil, &commandHTTPError{Detail: &ErrDetail{Message: "HTTP 客户端未初始化"}}
+	}
+
+	// 危险命令若声明了业务字段 confirm，执行时自动注入 confirm=true。
+	// 理由：--yes + --confirm-token 双门槛已是用户显式确认，服务端却还要求 body 里
+	// confirm=true（如 trash delete/empty、oplog clear），不注入必然 400。
+	// 注入进 params（而非只进 request）是为了让 dry-run 签发的 confirm_token 与执行时
+	// 校验基于同一份参数（makeConfirmToken 会把 confirm 计入哈希），否则令牌恒不匹配。
+	if commandDeclaresParam(cmd, "confirm") {
+		if _, ok := params["confirm"]; !ok {
+			if params == nil {
+				params = map[string]string{}
+			}
+			params["confirm"] = "true"
+		}
 	}
 
 	request := make(map[string]string, len(params))

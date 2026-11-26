@@ -103,6 +103,13 @@ func run(args []string, out io.Writer) int {
 		writeError(out, cmd.Name, &ErrDetail{Message: err.Error()})
 		return 2
 	}
+
+	// /api/events 是 SSE 无限心跳流，不能用 io.ReadAll（会阻塞到超时再失败、拿不到事件）。
+	// 走流式逐行输出到 stdout，Ctrl+C（SIGINT/SIGTERM）优雅停止并退出 0。
+	if cmd.Path == "/api/events" {
+		return runEventStream(out, *urlFlag, token)
+	}
+
 	c := NewClient(*urlFlag, token)
 
 	result, err := cmd.Run(context.Background(), c, params)
@@ -135,12 +142,14 @@ func run(args []string, out io.Writer) int {
 	return 0
 }
 
-// binaryResultCommand 列出返回二进制/CSV/附件字节而非 JSON 的只读路由，这些命令跳过信封、原样输出。
-// 导出类（zip/CSV/指纹 JSON 文件）把产物写到 stdout，供重定向落盘；塞进 JSON 信封会编码失败。
+// binaryResultCommand 列出返回二进制/CSV/HTML/附件字节而非 JSON 的路由，这些命令跳过信封、原样输出。
+// 导出类（zip/CSV/HTML/指纹 JSON 文件）把产物写到 stdout，供重定向落盘；塞进 JSON 信封会编码失败。
+// /api/export←CSV、/api/report←HTML、/api/oplog/export←CSV-BOM 都是非 JSON，必须纳入。
 func binaryResultCommand(cmd Command) bool {
 	switch cmd.Path {
 	case "/api/raw", "/api/thumb",
-		"/api/trash/export", "/api/sync/export", "/api/rule-search/export":
+		"/api/trash/export", "/api/sync/export", "/api/rule-search/export",
+		"/api/export", "/api/report", "/api/oplog/export":
 		return true
 	default:
 		return false
@@ -149,11 +158,18 @@ func binaryResultCommand(cmd Command) bool {
 
 // writeResult 输出信封；--pretty 在信封层做一次缩进，避免 Encoder 把 RawMessage 压回单行。
 func writeResult(out io.Writer, command string, raw []byte, rawMode, pretty bool) error {
+	// 通用兜底：非原始模式但响应不是合法 JSON（如遗漏声明的 CSV/HTML/纯文本）时，
+	// 直接原样写出，避免 json.RawMessage 编码失败导致「输出结果信封失败」退出 1、丢数据。
+	// 空响应体仍走信封（data:null），保持既有语义。
+	if rawMode || (len(raw) > 0 && !json.Valid(raw)) {
+		_, err := out.Write(raw)
+		return err
+	}
 	if !pretty {
-		return writeEnvelope(out, command, raw, rawMode)
+		return writeEnvelope(out, command, raw, false)
 	}
 	var buf bytes.Buffer
-	if err := writeEnvelope(&buf, command, raw, rawMode); err != nil {
+	if err := writeEnvelope(&buf, command, raw, false); err != nil {
 		return err
 	}
 	if !json.Valid(buf.Bytes()) {

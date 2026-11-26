@@ -103,7 +103,7 @@ var Commands = []Command{
 	{Name: "rename cancel", Path: "/api/rename/cancel", Method: "POST", Params: []Param{{"plan_id", "int", false, ""}, {"clear", "bool", false, ""}}, SideEffect: "trigger", Confirm: false},
 	{Name: "rename undo-batch", Path: "/api/rename/undo-batch", Method: "POST", Params: []Param{{"batch_ids", "json", false, ""}}, SideEffect: "destructive", Confirm: true},
 	{Name: "rename batches recent", Path: "/api/rename/batches/recent", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
-	{Name: "rename undo", Path: "/api/rename/undo/", Method: "POST", Params: nil, SideEffect: "destructive", Confirm: true},
+	{Name: "rename undo", Path: "/api/rename/undo/", Method: "POST", Params: []Param{{"id", "int", true, ""}}, PathParams: []string{"id"}, SideEffect: "destructive", Confirm: true},
 	{Name: "rename batches unfinished", Path: "/api/rename/batches/unfinished", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "rename presets", Path: "/api/rename/presets", Method: "POST", Params: []Param{{"name", "string", true, ""}, {"description", "string", false, ""}, {"methods", "string", true, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "rename preset delete", Path: "/api/rename/presets/", Method: "DELETE", Params: []Param{{"id", "int", true, ""}}, PathParams: []string{"id"}, SideEffect: "destructive", Confirm: true},
