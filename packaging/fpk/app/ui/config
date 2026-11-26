@@ -7,7 +7,10 @@
             "protocol": "http",
             "port": "8898",
             "url": "/",
-            "allUsers": false
+            "allUsers": false,
+            "control": {
+                "accessPerm": "readonly"
+            }
         }
     }
 }

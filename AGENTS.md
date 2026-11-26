@@ -67,6 +67,12 @@
 - 视频分析复用系统 `ffmpeg`/`ffprobe`，不打包静态 FFmpeg
 - 内嵌字典/规则数据（internal/**/data/）总量 ≤50M（`check-agents-md.sh` 断言，v1.31 护栏）
 - `packaging/fpk/cmd/` 的 `install_init`、`uninstall_init`、`upgrade_init`、`upgrade_callback` 是 fnpack 1.2.3 实测强制要求的（缺文件直接打包失败），不能删；占位脚本至少要写一行日志，避免钩子静默空跑
+- **飞牛上架结构约定（2026-11-26，按 developer.fnnas.com 官方文档）**：
+  - 包图标 `ICON.PNG` 必须是 **64×64**、`ICON_256.PNG` 是 256×256（旧包曾把 `ICON.PNG` 误做成 256×256，已修）；入口图标 `app/ui/images/icon_64.png`/`icon_256.png` 是独立的一套，别混
+  - `manifest` 上架审核会看 `maintainer_url`、`os_min_version`、`changelog`、`platform`（只有 amd64 二进制就写 `x86`，不要写 `all`）；字段名是 `changelog` 不是 `change_log`
+  - 应用入口 `type=url` 是官方文档认可的打开方式（浏览器标签页），不是只能用 `iframe`；管理员专属用 `allUsers=false` + `control.accessPerm=readonly`
+  - fnpack **1.3.3** 起默认要求开发者证书签名：无证书时 `fnpack build` 会直接失败，`scripts/build-fpk.sh` 显式加 `--nosign` 打本地调试包；拿到飞牛官方证书并 `fnpack cert import` 后去掉 `--nosign` 即为上架包（`--nosign` 不能与 `--key`/`--cert` 同用）。自签证书导入会被拒（`Invalid certificate`），证书只能从飞牛官方申请
+  - 上架提交走飞牛粉丝群 → 社区主理人 → 「应用中心开发者先锋交流群」，另需真实界面截图；手动安装仅用于本地测试，不作为公开分发方式
 
 ### 长任务并发（v3.18.0 起硬约束）
 
@@ -100,7 +106,7 @@ bash scripts/build-fpk.sh
 - 测试中存在 Linux 风格的绝对路径断言（以 `/` 开头的卷路径），**不要把 Windows 的测试失败直接当成代码 bug**；以 CI（ubuntu）为准
 - `packaging/fpk/app/bin/verify` 与 `dist/verify-<版本>.fpk` 是构建产物，已被 `.gitignore` 忽略，**不要提交**
 - 涉及 `syscall.Stat_t` / `Statfs_t` 的包（engine、watch、web）在 Windows 目标下无法编译，`go vet` / `go test` / `gosec` / `errcheck` 都必须带 `GOOS=linux`；否则 SSA 分析会被跳过，taint 类规则不会执行
-- **不要凭印象断言工具是否存在**。`fnpack` 官方提供 Windows x86 版本（`fnpack-1.2.3-windows-amd64`，下载后去掉后缀即可运行），需自行安装并加入 PATH；`scripts/build-fpk.sh` 启动时会检查。同类判断一律先查官方文档
+- **不要凭印象断言工具是否存在**。`fnpack` 官方提供 Windows x86 版本（当前 `fnpack-1.3.3-windows-amd64`，下载后去掉后缀即可运行），需自行安装并加入 PATH；`scripts/build-fpk.sh` 启动时会检查。同类判断一律先查官方文档
 - **公开前把关**：`bash scripts/check-public-safety.sh` 已挂进 `quick-check` 与 CI，扫三处（HEAD 树、待提交差异、可选 `--history`）。零容忍内网地址、本机绝对路径、邮箱、账号、令牌、私有仓地址、内部文档、构建产物；`/volN/`、`_外置`、`_tool` 只提示。确属误报的写进 `.public-safety-allow`（`glob<TAB>规则<TAB>原因`），门禁会逐条打印放行记录；本机真实值（账号、机器名、姓名）放 `.public-safety.local`，该文件不进仓库
 
 ### 开发工作流（省 Token 优先）

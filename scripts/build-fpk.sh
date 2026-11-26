@@ -52,7 +52,11 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflag
 mkdir -p dist
 # fnpack 只能把 fpk 输出到当前工作目录，因此从 dist/ 调用。
 cd dist
-fnpack build -d ../packaging/fpk
+# fnpack 1.3.3 起默认要求开发者证书签名；无证书时打包会直接失败。
+# 本地迭代没有证书，显式 --nosign 才能保证构建跑通；拿到飞牛官方证书并
+# `fnpack cert import` 后，去掉 --nosign 即为正式上架包。
+# 注意 --nosign 不能和 --key/--cert 同时用，所以这里只能二选一。
+fnpack build --nosign -d ../packaging/fpk
 cd ..
 
 # 安装包文件名必须带版本号：dist/ 里会并存多版产物，同名 verify.fpk 无法区分新旧。
