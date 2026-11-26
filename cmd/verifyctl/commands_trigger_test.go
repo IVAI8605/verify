@@ -293,3 +293,57 @@ func TestTriggerErrorMapping(t *testing.T) {
 		t.Fatalf("错误文案未原样保留：%+v", detail)
 	}
 }
+
+// TestBoolParamsEncodedAsBool 验证服务端解码为 bool 的注册表参数发出的是 JSON 布尔，
+// 而非字符串（字符串会让 index repair 真机 400、health scan 静默变 false）。
+func TestBoolParamsEncodedAsBool(t *testing.T) {
+	cases := []struct {
+		command string
+		params  map[string]string
+	}{
+		{"index repair", map[string]string{"dry_run": "true"}},
+		{"video reanalyze", map[string]string{"all": "true"}},
+		{"health scan", map[string]string{"restrict_charset": "true", "non_cjk": "true", "force": "true"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.command, func(t *testing.T) {
+			cmd, ok := findCommand(tc.command)
+			if !ok {
+				t.Fatalf("命令表应有 %s", tc.command)
+			}
+			// 先钉住注册表类型，再钉住线上字节，防止两处各自漂移。
+			types := make(map[string]string, len(cmd.Params))
+			for _, p := range cmd.Params {
+				types[p.Name] = p.Type
+			}
+			params := map[string]string{"__cli_yes": "true"}
+			for k, v := range tc.params {
+				if types[k] != "bool" {
+					t.Fatalf("%s 的 %s 应为 bool，实际 %s", tc.command, k, types[k])
+				}
+				params[k] = v
+			}
+
+			var body string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				body = string(b)
+				w.Write([]byte(`{"ok":true}`))
+			}))
+			defer srv.Close()
+
+			c := NewClient(srv.URL, "t")
+			if _, err := runTriggerCommand(context.Background(), c, cmd, params); err != nil {
+				t.Fatalf("执行失败：%v", err)
+			}
+			for k := range tc.params {
+				if !strings.Contains(body, `"`+k+`":true`) {
+					t.Fatalf("%s 应发真布尔 %s:true，实际请求体=%s", tc.command, k, body)
+				}
+				if strings.Contains(body, `"`+k+`":"true"`) {
+					t.Fatalf("%s 把 %s 发成了字符串，实际请求体=%s", tc.command, k, body)
+				}
+			}
+		})
+	}
+}
