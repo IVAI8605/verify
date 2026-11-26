@@ -58,9 +58,10 @@ func run(args []string, out io.Writer) int {
 		fmt.Fprintln(out, version)
 		return 0
 	default:
-		if _, ok := findCommand(rest[0]); ok {
-			// 已登记命令：实际执行由后续任务接入，本阶段只完成名字解析。
-			return 0
+		if cmd, ok := findCommand(rest[0]); ok {
+			// 执行逻辑尚未接入：必须明确报错，避免脚本把空输出误判为操作已生效。
+			fmt.Fprintf(out, "命令 %s 的执行尚未接入，本阶段仅解析命令名\n", cmd.Name)
+			return 2
 		}
 		fmt.Fprintf(out, "未知子命令：%s\n", rest[0])
 		return 2

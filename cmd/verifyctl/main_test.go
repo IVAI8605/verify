@@ -51,6 +51,19 @@ func TestGlobalFlagsAccepted(t *testing.T) {
 	}
 }
 
+// TestRegisteredCommandNotExecuted 验证已登记但执行尚未接入的命令返回非 0 并给出中文提示，
+// 防止脚本把「退出码 0 + 空输出」误判为操作已生效（destructive 命令尤其危险）。
+func TestRegisteredCommandNotExecuted(t *testing.T) {
+	var buf bytes.Buffer
+	code := run([]string{"status"}, &buf)
+	if code == 0 {
+		t.Fatalf("已登记但执行尚未接入的命令不应返回 0；输出=%q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "尚未接入") {
+		t.Fatalf("应给出中文提示说明执行尚未接入；输出=%q", buf.String())
+	}
+}
+
 // TestUnknownSubcommand 验证未知子命令返回非 0 退出码并给出中文提示。
 func TestUnknownSubcommand(t *testing.T) {
 	var buf bytes.Buffer
