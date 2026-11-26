@@ -40,6 +40,7 @@ func init() {
 
 // runDangerCommand 执行一条危险命令，在 runGuardedCommand 的 dry-run/--yes 逻辑之上叠加确认令牌门槛：
 //   - 默认（未带 --yes）或显式 --dry-run：只回 would_do + confirm_token，不发任何请求；
+//   - 只带 --confirm-token 不带 --yes（且非显式 --dry-run）：本地用法错误（退出码 2），不发请求；
 //   - 已带 --yes 但缺 --confirm-token：本地用法错误（退出码 2），不发请求；
 //   - --confirm-token 与 dry-run 签发的不一致或已过期：本地用法错误（退出码 2），不发请求；
 //   - 双门槛都过：才调用 c.Do 真正执行，成功原样透传响应体。
