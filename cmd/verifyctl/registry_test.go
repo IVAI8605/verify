@@ -8,6 +8,12 @@ import (
 	"testing"
 )
 
+// routeKey 是命令表条目的唯一键：同一 path 的不同 HTTP 方法是不同命令，互不覆盖。
+type routeKey struct {
+	path   string
+	method string
+}
+
 // 路由正则：抽取 server.go 里 mux.HandleFunc("路径", ...) 注册的路径。
 var serverRouteRE = regexp.MustCompile(`mux\.HandleFunc\("([^"]+)"`)
 
@@ -35,18 +41,42 @@ func parseServerRoutes(t *testing.T, path string) map[string]bool {
 }
 
 // TestCommandsCoverAllRoutes 断言命令表覆盖 server.go 全部非静态路由，防止「残缺核心」。
+// 同一个 path 允许多个 Command（如 GET 读 / DELETE 删），覆盖以 (path, method) 为最小单位。
 func TestCommandsCoverAllRoutes(t *testing.T) {
 	routes := parseServerRoutes(t, "../internal/web/server.go")
-	covered := map[string]bool{}
+	covered := map[routeKey]bool{}
+	coveredPaths := map[string]bool{}
 	for _, cmd := range Commands {
-		covered[cmd.Path] = true
+		covered[routeKey{cmd.Path, cmd.Method}] = true
+		coveredPaths[cmd.Path] = true
 	}
 	for r := range routes {
 		if strings.HasPrefix(r, "/ui/") || r == "/" || r == "/favicon.ico" {
 			continue
 		}
-		if !covered[r] {
+		if !coveredPaths[r] {
 			t.Errorf("命令表未覆盖路由 %s", r)
+		}
+	}
+}
+
+// TestSecondaryMethodCommandsCovered 防止多方法路由的次要方法永久不可达：
+// 这些写/破坏性操作与同 path 的 GET 命令是不同能力，缺一条即算残缺。
+func TestSecondaryMethodCommandsCovered(t *testing.T) {
+	want := []routeKey{
+		{"/api/video_tags", "POST"},
+		{"/api/video_tags", "DELETE"},
+		{"/api/sync/peers", "DELETE"},
+		{"/api/import/sessions", "DELETE"},
+		{"/api/rename/presets/", "PUT"},
+	}
+	covered := map[routeKey]bool{}
+	for _, cmd := range Commands {
+		covered[routeKey{cmd.Path, cmd.Method}] = true
+	}
+	for _, key := range want {
+		if !covered[key] {
+			t.Errorf("命令表未覆盖次要方法 %s %s", key.method, key.path)
 		}
 	}
 }
@@ -62,11 +92,11 @@ func TestFindCommand(t *testing.T) {
 	}
 }
 
-// TestCommandsWellFormed 验证命令表条目字段完整、名字与路径唯一、副作用取值合法。
+// TestCommandsWellFormed 验证命令表条目字段完整、名字唯一、(path, method) 唯一、副作用取值合法。
 func TestCommandsWellFormed(t *testing.T) {
 	validEffects := map[string]bool{"none": true, "trigger": true, "write": true, "destructive": true}
 	names := map[string]bool{}
-	paths := map[string]bool{}
+	routes := map[routeKey]bool{}
 	for _, cmd := range Commands {
 		if cmd.Name == "" || cmd.Path == "" || cmd.Method == "" || cmd.SideEffect == "" {
 			t.Errorf("命令字段不全：%+v", cmd)
@@ -78,10 +108,11 @@ func TestCommandsWellFormed(t *testing.T) {
 			t.Errorf("命令名重复：%s", cmd.Name)
 		}
 		names[cmd.Name] = true
-		if paths[cmd.Path] {
-			t.Errorf("命令路径重复：%s", cmd.Path)
+		key := routeKey{cmd.Path, cmd.Method}
+		if routes[key] {
+			t.Errorf("命令路径+方法重复：%s %s", cmd.Method, cmd.Path)
 		}
-		paths[cmd.Path] = true
+		routes[key] = true
 		if cmd.Confirm && cmd.SideEffect != "destructive" {
 			t.Errorf("命令 %s 要求确认但副作用不是 destructive", cmd.Name)
 		}
