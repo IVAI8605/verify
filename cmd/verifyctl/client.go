@@ -207,24 +207,36 @@ func typedPayload(cmd Command, params map[string]string) ([]byte, error) {
 		}
 		switch types[k] {
 		case "bool":
+			if v == "" { // 显式空串按「未提供」处理，避免 bool 解成空串
+				continue
+			}
 			if b, err := strconv.ParseBool(v); err == nil {
 				payload[k] = b
 			} else {
 				payload[k] = v
 			}
 		case "int":
+			if v == "" {
+				continue
+			}
 			if n, err := strconv.Atoi(v); err == nil {
 				payload[k] = n
 			} else {
 				payload[k] = v
 			}
 		case "float":
+			if v == "" {
+				continue
+			}
 			if f, err := strconv.ParseFloat(v, 64); err == nil {
 				payload[k] = f
 			} else {
 				payload[k] = v
 			}
 		case "json":
+			if v == "" {
+				continue
+			}
 			if json.Valid([]byte(v)) {
 				payload[k] = json.RawMessage(v)
 			} else {

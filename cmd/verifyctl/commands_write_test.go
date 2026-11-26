@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -483,5 +484,116 @@ func TestImportMultipartUpload(t *testing.T) {
 	}
 	if !strings.Contains(gotFile, "/a,1") {
 		t.Fatalf("文件内容未上传：%q", gotFile)
+	}
+}
+
+// TestWriteOnlySendsProvidedParams（C1 回归）验证写命令只发送用户显式提供的参数：
+// 声明参数的空默认值（bool/int/json）不得混入请求体，否则服务端把 `watch:""` 解成
+// *bool、`group_keys:""` 解成 []string 会直接 400。用 DisallowUnknownFields + 严格结构体
+// 模拟 settings / health rename / trash 的真实字段形状，走完整 CLI run() 路径。
+func TestWriteOnlySendsProvidedParams(t *testing.T) {
+	t.Run("settings", func(t *testing.T) {
+		var got struct {
+			MinSize int   `json:"min_size"`
+			Watch   *bool `json:"watch"`
+		}
+		var decodeErr error
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			decodeErr = dec.Decode(&got)
+			w.Write([]byte(`{"ok":true}`))
+		}))
+		defer srv.Close()
+		var buf bytes.Buffer
+		code := run([]string{"--url", srv.URL, "--token", "t", "settings", "--yes", "--min_size", "100"}, &buf)
+		if code != 0 {
+			t.Fatalf("退出码=%d 输出=%s", code, buf.String())
+		}
+		if decodeErr != nil {
+			t.Fatalf("严格解码失败（空默认值混入请求体）：%v", decodeErr)
+		}
+		if got.MinSize != 100 || got.Watch != nil {
+			t.Fatalf("body 解析异常：%+v", got)
+		}
+	})
+
+	t.Run("health rename", func(t *testing.T) {
+		var got struct {
+			Kind            string   `json:"kind"`
+			Paths           []string `json:"paths"`
+			RestrictCharset bool     `json:"restrict_charset"`
+			NonCJK          bool     `json:"non_cjk"`
+			OnlyUppercase   bool     `json:"only_uppercase"`
+			Force           bool     `json:"force"`
+			DryRun          bool     `json:"dry_run"`
+			All             bool     `json:"all"`
+		}
+		var decodeErr error
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			decodeErr = dec.Decode(&got)
+			w.Write([]byte(`{"ok":true}`))
+		}))
+		defer srv.Close()
+		var buf bytes.Buffer
+		code := run([]string{"--url", srv.URL, "--token", "t", "health", "rename", "--yes",
+			"--kind", "broken", "--paths", `["/a","/b"]`}, &buf)
+		if code != 0 {
+			t.Fatalf("退出码=%d 输出=%s", code, buf.String())
+		}
+		if decodeErr != nil {
+			t.Fatalf("严格解码失败（dry_run/force/all 等空默认值混入）：%v", decodeErr)
+		}
+		if got.Kind != "broken" || len(got.Paths) != 2 {
+			t.Fatalf("body 解析异常：%+v", got)
+		}
+	})
+
+	t.Run("trash", func(t *testing.T) {
+		var got struct {
+			Paths     []string `json:"paths"`
+			GroupKey  string   `json:"group_key"`
+			GroupKeys []string `json:"group_keys"`
+		}
+		var decodeErr error
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			decodeErr = dec.Decode(&got)
+			w.Write([]byte(`{"ok":true}`))
+		}))
+		defer srv.Close()
+		var buf bytes.Buffer
+		code := run([]string{"--url", srv.URL, "--token", "t", "trash", "--yes", "--paths", `["/a","/b"]`}, &buf)
+		if code != 0 {
+			t.Fatalf("退出码=%d 输出=%s", code, buf.String())
+		}
+		if decodeErr != nil {
+			t.Fatalf("严格解码失败（group_keys 空串混入）：%v", decodeErr)
+		}
+		if len(got.Paths) != 2 || got.GroupKeys != nil {
+			t.Fatalf("body 解析异常：%+v", got)
+		}
+	})
+}
+
+// TestExportCommandsAreReadOnly（I2 复核）断言 GET 只读导出命令不再被 --yes 门禁挡在 dry-run。
+func TestExportCommandsAreReadOnly(t *testing.T) {
+	for _, name := range []string{"trash export", "sync export", "rule-search export"} {
+		cmd, ok := findCommand(name)
+		if !ok {
+			t.Fatalf("缺少命令 %s", name)
+		}
+		if cmd.Method != http.MethodGet {
+			t.Errorf("%s 应为 GET，实际 %s", name, cmd.Method)
+		}
+		if cmd.SideEffect != "none" {
+			t.Errorf("%s 是只读导出，应为 none（避免 --yes 门禁），实际 %s", name, cmd.SideEffect)
+		}
+		if cmd.Run == nil {
+			t.Errorf("%s 应已被读执行器接线（Run 非空）", name)
+		}
 	}
 }

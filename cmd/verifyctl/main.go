@@ -127,10 +127,12 @@ func run(args []string, out io.Writer) int {
 	return 0
 }
 
-// binaryResultCommand 列出返回二进制而非 JSON 的只读路由，这些命令跳过信封。
+// binaryResultCommand 列出返回二进制/CSV/附件字节而非 JSON 的只读路由，这些命令跳过信封、原样输出。
+// 导出类（zip/CSV/指纹 JSON 文件）把产物写到 stdout，供重定向落盘；塞进 JSON 信封会编码失败。
 func binaryResultCommand(cmd Command) bool {
 	switch cmd.Path {
-	case "/api/raw", "/api/thumb":
+	case "/api/raw", "/api/thumb",
+		"/api/trash/export", "/api/sync/export", "/api/rule-search/export":
 		return true
 	default:
 		return false
@@ -203,9 +205,15 @@ func parseCommandParams(cmd Command, args []string) (map[string]string, error) {
 	setByFlag := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { setByFlag[f.Name] = true })
 
+	// 关键：只把用户「显式提供」的参数放进 params。
+	// 声明参数里的空默认值（含并未出现的 bool/int/json）一律不发，否则服务端把
+	// `watch:""` 解成 *bool、`group_keys:""` 解成 []string 会直接 400。
+	// 提供方式有二：--flag 显式指定（setByFlag），或作为位置参数给出（见下方循环）。
 	params := make(map[string]string, len(values)+5)
-	for name, ptr := range values {
-		params[name] = *ptr
+	for name := range values {
+		if setByFlag[name] {
+			params[name] = *values[name]
+		}
 	}
 	if *pretty {
 		params["pretty"] = "true"
