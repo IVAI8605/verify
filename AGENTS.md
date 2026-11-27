@@ -70,6 +70,7 @@
 - **飞牛上架结构约定（2026-11-26，按 developer.fnnas.com 官方文档）**：
   - 包图标 `ICON.PNG` 必须是 **64×64**、`ICON_256.PNG` 是 256×256（旧包曾把 `ICON.PNG` 误做成 256×256，已修）；入口图标 `app/ui/images/icon_64.png`/`icon_256.png` 是独立的一套，别混
   - `manifest` 上架审核会看 `maintainer_url`、`os_min_version`、`changelog`、`platform`（只有 amd64 二进制就写 `x86`，不要写 `all`）；字段名是 `changelog` 不是 `change_log`
+  - `os_min_version` 填**能支持的最低系统版本**，别照抄开发机版本：v4.2.1 曾按开发机填成 `1.2.1200`，结果 1.2.1000 用户被应用中心拦下装不上，v4.3.1 已下调为 `1.2.1000`。本应用是静态 Go 二进制，只用文档级稳定接口（`TRIM_PKGVAR`/`TRIM_APPDEST`/`TRIM_SERVICE_PORT`、`service_port`、`type=url`、系统 ffmpeg），不随系统小版本变化；调低前仍要在目标版本真机装一次
   - 应用入口 `type=url` 是官方文档认可的打开方式（浏览器标签页），不是只能用 `iframe`；管理员专属用 `allUsers=false` + `control.accessPerm=readonly`
   - fnpack **1.3.3** 起默认要求开发者证书签名：无证书时 `fnpack build` 会直接失败，`scripts/build-fpk.sh` 显式加 `--nosign` 打本地调试包；拿到飞牛官方证书并 `fnpack cert import` 后去掉 `--nosign` 即为上架包（`--nosign` 不能与 `--key`/`--cert` 同用）。自签证书导入会被拒（`Invalid certificate`），证书只能从飞牛官方申请
   - 上架提交走飞牛粉丝群 → 社区主理人 → 「应用中心开发者先锋交流群」，另需真实界面截图；手动安装仅用于本地测试，不作为公开分发方式
