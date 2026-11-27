@@ -173,12 +173,12 @@ func TestEventsCommandTokenUsed(t *testing.T) {
 
 // TestDryRunRedactsAccessToken 守 I4：write 默认 dry-run 的 would_do.params 不得回显 access_token 明文。
 func TestDryRunRedactsAccessToken(t *testing.T) {
-	const secret = "cli-明文令牌-禁止回显-4f2a"
-	out, code := runOut(t, "settings", "--access_token", secret)
+	const placeholder = "cli-明文令牌-禁止回显-4f2a"
+	out, code := runOut(t, "settings", "--access_token", placeholder)
 	if code != 0 {
 		t.Fatalf("settings dry-run 退出码=%d；输出=%q", code, out)
 	}
-	if strings.Contains(out, secret) {
+	if strings.Contains(out, placeholder) {
 		t.Fatalf("dry-run 回显了 access_token 明文：%q", out)
 	}
 	// JSON 会把 <> 转义成 \u003c..\u003e，故解析后比对 params 里的真实值。
@@ -196,7 +196,7 @@ func TestDryRunRedactsAccessToken(t *testing.T) {
 		t.Fatalf("access_token 应脱敏为 <redacted>，实际 %q", got)
 	}
 	// 非敏感参数保持原样。
-	out2, _ := runOut(t, "settings", "--min_size", "1024", "--access_token", secret)
+	out2, _ := runOut(t, "settings", "--min_size", "1024", "--access_token", placeholder)
 	if !strings.Contains(out2, `"min_size":"1024"`) {
 		t.Fatalf("非敏感参数不应被脱敏：%q", out2)
 	}
