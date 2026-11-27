@@ -22,7 +22,7 @@ func TestDoBearerAndEnvelope(t *testing.T) {
 		if r.URL.Path != "/api/status" {
 			t.Errorf("请求路径错误：%s", r.URL.Path)
 		}
-		w.Write([]byte(`{"ok":true,"items":[]}`))
+		_, _ = w.Write([]byte(`{"ok":true,"items":[]}`))
 	}))
 	defer srv.Close()
 
@@ -118,7 +118,7 @@ func TestDoPostTypedParams(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Errorf("解析请求体失败：%v", err)
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 

@@ -76,7 +76,7 @@ func TestRenameUndoUsesPathParam(t *testing.T) {
 		if strings.Contains(string(body), `"id"`) {
 			t.Errorf("id 属路径参数，不应进 body：%s", body)
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "")
@@ -101,10 +101,10 @@ func TestDangerInjectsConfirm(t *testing.T) {
 		sawConfirm = body.Confirm
 		if !body.Confirm {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error":"清空隔离区不可恢复，需显式确认（confirm=true）"}`))
+			_, _ = w.Write([]byte(`{"error":"清空隔离区不可恢复，需显式确认（confirm=true）"}`))
 			return
 		}
-		w.Write([]byte(`{"removed":0,"errors":[]}`))
+		_, _ = w.Write([]byte(`{"removed":0,"errors":[]}`))
 	}))
 	defer srv.Close()
 
@@ -164,7 +164,7 @@ func TestBinaryResultCommands(t *testing.T) {
 	}
 	for _, tc := range cases {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(tc.body))
+			_, _ = w.Write([]byte(tc.body))
 		}))
 		out, code := runOut(t, append([]string{"--url", srv.URL}, tc.args...)...)
 		srv.Close()
@@ -208,11 +208,11 @@ func TestEventStream(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		fl, _ := w.(http.Flusher)
-		w.Write([]byte("data: {\"a\":1}\n\n"))
+		_, _ = w.Write([]byte("data: {\"a\":1}\n\n"))
 		if fl != nil {
 			fl.Flush()
 		}
-		w.Write([]byte("data: 2\n\n"))
+		_, _ = w.Write([]byte("data: 2\n\n"))
 		if fl != nil {
 			fl.Flush()
 		}

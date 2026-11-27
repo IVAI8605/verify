@@ -123,9 +123,7 @@ func writeObjectTable(w io.Writer, objs []map[string]any) error {
 
 	rows := make([][]string, 0, len(objs)+1)
 	header := make([]string, len(cols))
-	for i, c := range cols {
-		header[i] = c
-	}
+	copy(header, cols)
 	rows = append(rows, header)
 	for _, o := range objs {
 		row := make([]string, len(cols))

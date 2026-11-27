@@ -56,7 +56,7 @@ func makeConfirmTokenAt(cmd Command, params map[string]string, bucket int64) str
 
 	// 时间片也进哈希：同命令同参数在不同时间片签出的令牌不同，天然带短时效。
 	var bucketBytes [8]byte
-	binary.BigEndian.PutUint64(bucketBytes[:], uint64(bucket))
+	binary.BigEndian.PutUint64(bucketBytes[:], uint64(bucket)) // #nosec G115 -- 时间片由 Unix()/600 计算，恒为非负
 	h.Write(bucketBytes[:])
 
 	return hex.EncodeToString(h.Sum(nil)[:8])

@@ -9,9 +9,13 @@ import (
 // TestHelpJSONMatchesRegistry 验证 help-json 输出条数与命令表一致，且每条都带副作用与路径。
 func TestHelpJSONMatchesRegistry(t *testing.T) {
 	var buf bytes.Buffer
-	writeCommandList(&buf)
+	if err := writeCommandList(&buf); err != nil {
+		t.Fatalf("writeCommandList 失败：%v", err)
+	}
 	var list []Command
-	json.Unmarshal(buf.Bytes(), &list)
+	if err := json.Unmarshal(buf.Bytes(), &list); err != nil {
+		t.Fatalf("解析 help-json 失败：%v", err)
+	}
 	if len(list) != len(Commands) {
 		t.Fatalf("help-json %d 条 != 命令表 %d 条", len(list), len(Commands))
 	}

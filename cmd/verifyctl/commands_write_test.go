@@ -61,8 +61,8 @@ func TestWriteYesExecutes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		json.NewDecoder(r.Body).Decode(&gotBody)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -92,7 +92,7 @@ func TestWriteYesExecutes(t *testing.T) {
 func TestWriteYesPropagatesHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
-		w.Write([]byte(`{"error":"扫描进行中，请稍后再试"}`))
+		_, _ = w.Write([]byte(`{"error":"扫描进行中，请稍后再试"}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -172,8 +172,8 @@ func TestRenamePresetUpdateIDInPath(t *testing.T) {
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -203,7 +203,7 @@ func TestVideoTagsRecomputeIDInQuery(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -229,8 +229,8 @@ func TestTranscodeSendsPathsAndQuality(t *testing.T) {
 	}
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -258,8 +258,8 @@ func TestFolderRenameSendsDir(t *testing.T) {
 	}
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -284,8 +284,8 @@ func TestRenamePresetsCreateBodyFields(t *testing.T) {
 	}
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -313,8 +313,8 @@ func TestCleanupPlansSendsName(t *testing.T) {
 	}
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -339,8 +339,8 @@ func TestFSRootsSendsPath(t *testing.T) {
 	}
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -372,8 +372,8 @@ func TestTrashPostsBody(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("方法 = %s，期望 POST", r.Method)
 		}
-		json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -399,7 +399,7 @@ func TestOplogExportQueryParams(t *testing.T) {
 	var gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
-		w.Write([]byte("time,action\n"))
+		_, _ = w.Write([]byte("time,action\n"))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -424,8 +424,8 @@ func TestTrimProbeSendsDurationsAndThreshold(t *testing.T) {
 	}
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -470,7 +470,7 @@ func TestImportMultipartUpload(t *testing.T) {
 		defer f.Close()
 		b, _ := io.ReadAll(f)
 		gotFile = string(b)
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -502,7 +502,7 @@ func TestWriteOnlySendsProvidedParams(t *testing.T) {
 			dec := json.NewDecoder(r.Body)
 			dec.DisallowUnknownFields()
 			decodeErr = dec.Decode(&got)
-			w.Write([]byte(`{"ok":true}`))
+			_, _ = w.Write([]byte(`{"ok":true}`))
 		}))
 		defer srv.Close()
 		var buf bytes.Buffer
@@ -534,7 +534,7 @@ func TestWriteOnlySendsProvidedParams(t *testing.T) {
 			dec := json.NewDecoder(r.Body)
 			dec.DisallowUnknownFields()
 			decodeErr = dec.Decode(&got)
-			w.Write([]byte(`{"ok":true}`))
+			_, _ = w.Write([]byte(`{"ok":true}`))
 		}))
 		defer srv.Close()
 		var buf bytes.Buffer
@@ -562,7 +562,7 @@ func TestWriteOnlySendsProvidedParams(t *testing.T) {
 			dec := json.NewDecoder(r.Body)
 			dec.DisallowUnknownFields()
 			decodeErr = dec.Decode(&got)
-			w.Write([]byte(`{"ok":true}`))
+			_, _ = w.Write([]byte(`{"ok":true}`))
 		}))
 		defer srv.Close()
 		var buf bytes.Buffer

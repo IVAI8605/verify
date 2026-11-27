@@ -125,7 +125,7 @@ func TestTriggerYesExecutes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath = r.Method, r.URL.Path
 		gotBody, _ = io.ReadAll(r.Body)
-		w.Write([]byte(`{"ok":true,"task_id":"t-42"}`))
+		_, _ = w.Write([]byte(`{"ok":true,"task_id":"t-42"}`))
 	}))
 	defer srv.Close()
 
@@ -161,7 +161,7 @@ func TestTriggerCLIRoundTrip(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer cli-tok" {
 			t.Error("Bearer 令牌未随请求发出")
 		}
-		w.Write([]byte(`{"ok":true,"task_id":"t-7"}`))
+		_, _ = w.Write([]byte(`{"ok":true,"task_id":"t-7"}`))
 	}))
 	defer srv.Close()
 
@@ -213,7 +213,7 @@ func TestTriggerBusinessDryRunPassThrough(t *testing.T) {
 		if strings.Contains(gotBody, "__cli_") {
 			t.Errorf("内部保留 key 泄漏进请求体：%s", gotBody)
 		}
-		w.Write([]byte(`{"ok":true,"dry_run":true}`))
+		_, _ = w.Write([]byte(`{"ok":true,"dry_run":true}`))
 	}))
 	defer srv.Close()
 
@@ -272,7 +272,7 @@ func TestTriggerBusinessDryRunPassThrough(t *testing.T) {
 func TestTriggerErrorMapping(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
-		w.Write([]byte(`{"error":"扫描进行中"}`))
+		_, _ = w.Write([]byte(`{"error":"扫描进行中"}`))
 	}))
 	defer srv.Close()
 
@@ -328,7 +328,7 @@ func TestBoolParamsEncodedAsBool(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				b, _ := io.ReadAll(r.Body)
 				body = string(b)
-				w.Write([]byte(`{"ok":true}`))
+				_, _ = w.Write([]byte(`{"ok":true}`))
 			}))
 			defer srv.Close()
 

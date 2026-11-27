@@ -104,7 +104,7 @@ func run(args []string, out io.Writer) int {
 
 	token, err := resolveToken(*tokenFlag, *dataDirFlag)
 	if err != nil {
-		writeError(out, cmd.Name, &ErrDetail{Message: err.Error()})
+		_ = writeError(out, cmd.Name, &ErrDetail{Message: err.Error()})
 		return 2
 	}
 
@@ -140,7 +140,7 @@ func run(args []string, out io.Writer) int {
 
 	raw, err := runResultBytes(result)
 	if err != nil {
-		writeError(out, cmd.Name, &ErrDetail{Message: err.Error()})
+		_ = writeError(out, cmd.Name, &ErrDetail{Message: err.Error()})
 		return 1
 	}
 	// raw/thumb 返回文件字节或 JPEG，塞进 JSON 信封会直接编码失败；默认走原始输出。

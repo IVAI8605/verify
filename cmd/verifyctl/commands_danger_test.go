@@ -76,7 +76,7 @@ func TestDangerExecuteWithValidToken(t *testing.T) {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 		_ = dec.Decode(&gotBody)
-		w.Write([]byte(`{"ok":true,"deleted":2}`))
+		_, _ = w.Write([]byte(`{"ok":true,"deleted":2}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -186,7 +186,7 @@ func TestDangerCLIFlow(t *testing.T) {
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 
@@ -241,7 +241,7 @@ func TestDangerPathParamTokenMatchesExecute(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		gotPath = r.URL.Path
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "t")
@@ -324,7 +324,7 @@ func TestDangerCLIConfirmTokenWithoutYesExit2(t *testing.T) {
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 

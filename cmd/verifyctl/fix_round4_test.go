@@ -78,7 +78,7 @@ func TestBoolFlagReadPathSwitch(t *testing.T) {
 	var query url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query = r.URL.Query()
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 
@@ -99,7 +99,7 @@ func TestSearchCommandQuery(t *testing.T) {
 	var query url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query = r.URL.Query()
-		w.Write([]byte(`{"total":0,"items":[]}`))
+		_, _ = w.Write([]byte(`{"total":0,"items":[]}`))
 	}))
 	defer srv.Close()
 
@@ -138,7 +138,7 @@ func TestEventsCommandTokenUsed(t *testing.T) {
 			t.Errorf("不应把 token 放进查询串：%v", r.URL.Query())
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Write([]byte("data: hello\n\n"))
+		_, _ = w.Write([]byte("data: hello\n\n"))
 	}))
 	defer srv.Close()
 
@@ -279,7 +279,7 @@ func TestSnapshotPagingReachesQuery(t *testing.T) {
 	var query url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query = r.URL.Query()
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 

@@ -23,7 +23,7 @@ func runEventStream(out io.Writer, baseURL, token string) int {
 	url := strings.TrimRight(baseURL, "/") + "/api/events"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		writeError(out, "events", &ErrDetail{Message: "构造事件流请求失败（" + err.Error() + "）"})
+		_ = writeError(out, "events", &ErrDetail{Message: "构造事件流请求失败（" + err.Error() + "）"})
 		return 1
 	}
 	if token != "" {
@@ -37,7 +37,7 @@ func runEventStream(out io.Writer, baseURL, token string) int {
 		if errors.Is(err, context.Canceled) {
 			return 0
 		}
-		writeError(out, "events", &ErrDetail{Message: "连接事件流失败（" + err.Error() + "）"})
+		_ = writeError(out, "events", &ErrDetail{Message: "连接事件流失败（" + err.Error() + "）"})
 		return 4
 	}
 	defer resp.Body.Close()
@@ -45,7 +45,7 @@ func runEventStream(out io.Writer, baseURL, token string) int {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		status, detail := httpStatusFromError(&commandHTTPError{Status: resp.StatusCode, Detail: parseErrorDetail(raw)})
-		writeError(out, "events", detail)
+		_ = writeError(out, "events", detail)
 		return exitCodeForHTTP(status)
 	}
 
@@ -61,7 +61,7 @@ func runEventStream(out io.Writer, baseURL, token string) int {
 		}
 	}
 	if err := sc.Err(); err != nil && !errors.Is(err, context.Canceled) {
-		writeError(out, "events", &ErrDetail{Message: "读取事件流中断（" + err.Error() + "）"})
+		_ = writeError(out, "events", &ErrDetail{Message: "读取事件流中断（" + err.Error() + "）"})
 		return 4
 	}
 	return 0

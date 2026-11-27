@@ -34,7 +34,7 @@ func TestTrashListNotTrash(t *testing.T) {
 		if r.URL.Path == "/api/trash" {
 			t.Error("只读命令不得请求 /api/trash（该接口会清理幽灵行并写库）")
 		}
-		w.Write([]byte(`{"ok":true,"items":[]}`))
+		_, _ = w.Write([]byte(`{"ok":true,"items":[]}`))
 	}))
 	defer srv.Close()
 
@@ -72,7 +72,7 @@ func TestGroupsModeName(t *testing.T) {
 		if r.URL.Path != "/api/groups" {
 			t.Errorf("路径错误：%s", r.URL.Path)
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 
@@ -89,7 +89,7 @@ func TestGroupsModeName(t *testing.T) {
 func TestReadPassthrough(t *testing.T) {
 	const body = `{"ok":true,"items":[{"key":"a"}],"未来字段":{"深度":3,"list":[1,2]}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	}))
 	defer srv.Close()
 
@@ -124,7 +124,7 @@ func TestReadPassthrough(t *testing.T) {
 	var query string
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query = r.URL.RawQuery
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	})
 	if _, err := runReadCommand(context.Background(), c, cmd, map[string]string{"pretty": "true", "__cli_dry_run": "true", "__cli_yes": "true"}); err != nil {
 		t.Fatalf("控制参数场景执行失败：%v", err)
@@ -146,7 +146,7 @@ func TestPageSizeClamped(t *testing.T) {
 	var query string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query = r.URL.RawQuery
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 
@@ -187,7 +187,7 @@ func TestAllNoneCommandsWired(t *testing.T) {
 func TestReadCommandHTTPErrorMapping(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"error":"鉴权失败，令牌无效"}`))
+		_, _ = w.Write([]byte(`{"error":"鉴权失败，令牌无效"}`))
 	}))
 	defer srv.Close()
 
@@ -220,7 +220,7 @@ func TestMultiWordCommandDispatch(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer cli-tok" {
 			t.Error("未使用 Bearer 令牌")
 		}
-		w.Write([]byte(`{"ok":true,"items":[]}`))
+		_, _ = w.Write([]byte(`{"ok":true,"items":[]}`))
 	}))
 	defer srv.Close()
 
@@ -254,7 +254,7 @@ func TestBinaryReadCommandRawByDefault(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/octet-stream")
-				w.Write(binary)
+				_, _ = w.Write(binary)
 			}))
 			defer srv.Close()
 
@@ -275,7 +275,7 @@ func TestBinaryReadCommandRawByDefault(t *testing.T) {
 // TestPrettyEnvelopeIndented 验证 --pretty 在信封层仍保留缩进，不被 Encoder 压回单行。
 func TestPrettyEnvelopeIndented(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"ok":true,"items":[{"key":"a"}]}`))
+		_, _ = w.Write([]byte(`{"ok":true,"items":[{"key":"a"}]}`))
 	}))
 	defer srv.Close()
 
@@ -297,7 +297,7 @@ func TestAuthTokenSendsMarker(t *testing.T) {
 	var marker string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		marker = r.Header.Get("X-Requested-With")
-		w.Write([]byte(`{"token":"srv-tok"}`))
+		_, _ = w.Write([]byte(`{"token":"srv-tok"}`))
 	}))
 	defer srv.Close()
 

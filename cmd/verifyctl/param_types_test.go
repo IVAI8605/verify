@@ -27,7 +27,7 @@ func TestPostPathsParamSendsJSONArray(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Errorf("解析请求体失败：%v", err)
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 
@@ -62,7 +62,7 @@ func TestPostWorkerParamSendsInt(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Errorf("解析请求体失败：%v", err)
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 
@@ -111,7 +111,7 @@ func TestTrashPreviewGroupKeysSendsJSONArray(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Errorf("解析请求体失败：%v", err)
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "test-token")
@@ -142,7 +142,7 @@ func TestSettingsArrayAndObjectFields(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Errorf("解析请求体失败：%v", err)
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "test-token")
@@ -178,7 +178,7 @@ func TestSettingsAudioThresholdSendsFloat(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Errorf("解析请求体失败：%v", err)
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "test-token")
@@ -210,7 +210,7 @@ func TestSearchSelectionLimitSendsInt(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Errorf("解析请求体失败：%v", err)
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "test-token")
@@ -238,8 +238,8 @@ func TestHealthUndoSendsIntTaskID(t *testing.T) {
 	}
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&got)
-		w.Write([]byte(`{"ok":true}`))
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "test-token")

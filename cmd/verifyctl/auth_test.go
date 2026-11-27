@@ -100,7 +100,7 @@ func TestAuthTokenRequest(t *testing.T) {
 		requestedWith = r.Header.Get("X-Requested-With")
 		auth = r.Header.Get("Authorization")
 		query = r.URL.RawQuery
-		w.Write([]byte(`{"token":"server-tok"}`))
+		_, _ = w.Write([]byte(`{"token":"server-tok"}`))
 	}))
 	defer srv.Close()
 
@@ -133,7 +133,7 @@ func TestAuthTokenRequest(t *testing.T) {
 func TestAuthTokenServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"error":"缺少请求标记"}`))
+		_, _ = w.Write([]byte(`{"error":"缺少请求标记"}`))
 	}))
 	defer srv.Close()
 

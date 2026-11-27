@@ -202,7 +202,7 @@ func TestTableTruncatesLongCell(t *testing.T) {
 // TestTableFormatWiring 验证 --format table 走表格而不是 JSON 信封，且错误仍是 JSON。
 func TestTableFormatWiring(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"ok":true,"items":[{"key":"g1","count":2},{"key":"g2","count":3}]}`))
+		_, _ = w.Write([]byte(`{"ok":true,"items":[{"key":"g1","count":2},{"key":"g2","count":3}]}`))
 	}))
 	defer srv.Close()
 
@@ -303,7 +303,7 @@ func TestDisplayWidth(t *testing.T) {
 func TestTableFormatErrorStaysJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
-		w.Write([]byte(`{"error":"扫描进行中，请稍后再试"}`))
+		_, _ = w.Write([]byte(`{"error":"扫描进行中，请稍后再试"}`))
 	}))
 	defer srv.Close()
 
@@ -324,7 +324,7 @@ func TestTableFormatErrorStaysJSON(t *testing.T) {
 func TestTableFormatIgnoredForBinary(t *testing.T) {
 	const csv = "\ufefftime,action\n1,scan\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(csv))
+		_, _ = w.Write([]byte(csv))
 	}))
 	defer srv.Close()
 
