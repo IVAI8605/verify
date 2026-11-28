@@ -37,7 +37,7 @@ func TestVersionSubcommandNoTokenLeak(t *testing.T) {
 // TestGlobalFlagsAccepted 验证六个全局参数都能被解析，且不影响 version 输出。
 func TestGlobalFlagsAccepted(t *testing.T) {
 	args := []string{
-		"--url", "http://127.0.0.1:8898",
+		"--url", "http://127.0.0.1:18898",
 		"--token", "abc",
 		"--data-dir", "/vol1/@appdata/verify/data",
 		"--format", "json",

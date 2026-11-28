@@ -62,7 +62,13 @@ cd dist
 # 本地迭代没有证书，显式 --nosign 才能保证构建跑通；拿到飞牛官方证书并
 # `fnpack cert import` 后，去掉 --nosign 即为正式上架包。
 # 注意 --nosign 不能和 --key/--cert 同时用，所以这里只能二选一。
-fnpack build --nosign -d ../packaging/fpk
+# v4.4.0：本机装的是 fnpack 1.2.3，还不认识 --nosign（传了会直接报未知参数）。
+# 按版本探测一下，旧版不带该参数，新版才带，避免「换台机器就打不出包」。
+if fnpack build --help 2>&1 | grep -q -- '--nosign'; then
+	fnpack build --nosign -d ../packaging/fpk
+else
+	fnpack build -d ../packaging/fpk
+fi
 cd ..
 
 # 安装包文件名必须带版本号：dist/ 里会并存多版产物，同名 verify.fpk 无法区分新旧。

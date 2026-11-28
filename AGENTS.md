@@ -72,6 +72,7 @@
   - `manifest` 上架审核会看 `maintainer_url`、`os_min_version`、`changelog`、`platform`（只有 amd64 二进制就写 `x86`，不要写 `all`）；字段名是 `changelog` 不是 `change_log`
   - `os_min_version` 填**能支持的最低系统版本**，别照抄开发机版本：v4.2.1 曾按开发机填成 `1.2.1200`，结果 1.2.1000 用户被应用中心拦下装不上，v4.3.1 已下调为 `1.2.1000`。本应用是静态 Go 二进制，只用文档级稳定接口（`TRIM_PKGVAR`/`TRIM_APPDEST`/`TRIM_SERVICE_PORT`、`service_port`、`type=url`、系统 ffmpeg），不随系统小版本变化；调低前仍要在目标版本真机装一次
   - 应用入口 `type=url` 是官方文档认可的打开方式（浏览器标签页），不是只能用 `iframe`；管理员专属用 `allUsers=false` + `control.accessPerm=readonly`
+  - **端口由安装向导收集（v4.4.0 起）**：`manifest` 的 `service_port` 与 `app/ui/config` 的 `port` 都写 `${wizard_port}`，`wizard/install` 与 `wizard/upgrade` 用 `text` 字段 `wizard_port` 收集（默认 18898，正则限 1000–65535）；`cmd/main` 启动时按 `wizard_port → TRIM_SERVICE_PORT → 18898` 解析并再次校验，非法值回退 18898。改默认端口时这几处必须一起改，否则会出现「应用监听 A 端口、应用中心按 B 端口开」的错位
   - fnpack **1.3.3** 起默认要求开发者证书签名：无证书时 `fnpack build` 会直接失败，`scripts/build-fpk.sh` 显式加 `--nosign` 打本地调试包；拿到飞牛官方证书并 `fnpack cert import` 后去掉 `--nosign` 即为上架包（`--nosign` 不能与 `--key`/`--cert` 同用）。自签证书导入会被拒（`Invalid certificate`），证书只能从飞牛官方申请
   - 上架提交走飞牛粉丝群 → 社区主理人 → 「应用中心开发者先锋交流群」，另需真实界面截图；手动安装仅用于本地测试，不作为公开分发方式
 
@@ -145,7 +146,7 @@ bash scripts/build-fpk.sh
 
 - 使用飞牛官方 CLI（`trim-cli`）通过 HTTP API 访问 NAS（OAuth PKCE 登录，禁止索取/代填账号密码）
 - 应用数据目录：fnOS 默认 `@appdata/verify/data`（`verify.db`、`logs/verify.log`、`cache/`）
-- Web UI：`http://<NAS>:8898`，`/api/status` 可用于只读探测
+- Web UI：`http://<NAS>:18898`（端口由安装/升级向导的 `wizard_port` 决定，默认 18898），`/api/status` 可用于只读探测
 - 写操作前先做只读探测（`system info`、`file ls`、`storage pools`），写后立即回归；一次只做一个可解释的写操作
 
 ### 版本与发布

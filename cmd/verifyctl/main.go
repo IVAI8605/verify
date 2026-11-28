@@ -14,7 +14,7 @@ import (
 )
 
 // defaultBaseURL 与服务端默认监听地址一致；--url 可覆盖。
-const defaultBaseURL = "http://127.0.0.1:8898"
+const defaultBaseURL = "http://127.0.0.1:18898"
 
 // version 由构建期 -X main.version=<版本> 注入；未注入时默认为 dev。
 var version = "dev"
@@ -25,7 +25,7 @@ func run(args []string, out io.Writer) int {
 	fs := flag.NewFlagSet("verifyctl", flag.ContinueOnError)
 	fs.SetOutput(out)
 
-	urlFlag := fs.String("url", defaultBaseURL, "Verify 实例地址，例如 http://127.0.0.1:8898")
+	urlFlag := fs.String("url", defaultBaseURL, "Verify 实例地址，例如 http://127.0.0.1:18898")
 	tokenFlag := fs.String("token", "", "访问令牌，仅用于 Authorization: Bearer，不回显")
 	dataDirFlag := fs.String("data-dir", "", "Verify 数据目录，供本地只读辅助使用")
 	formatFlag := fs.String("format", "", "输出格式：table 渲染人类可读表格，json（默认）输出 JSON 信封；非 JSON 响应忽略此项")

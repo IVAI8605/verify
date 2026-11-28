@@ -3,9 +3,22 @@
 LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 
+# 端口优先级（v4.4.0）：安装向导里的 wizard_port → 系统解析后的 TRIM_SERVICE_PORT → 18898。
+# 为什么要再校验一次：向导值只是环境变量，可能为空、带空格或越界；端口非法时宁可用默认值，
+# 也不要让服务监听在 0 或 70000 这种必然失败的值上（那会变成「装好了但打不开」）。
+PORT="${wizard_port:-}"
+[ -z "${PORT}" ] && PORT="${TRIM_SERVICE_PORT:-}"
+case "${PORT}" in
+    ''|*[!0-9]*) PORT=18898 ;;
+esac
+if [ "${PORT}" -lt 1024 ] || [ "${PORT}" -gt 65535 ] 2>/dev/null; then
+    PORT=18898
+fi
+echo "$(date '+%Y-%m-%d %H:%M:%S') - 解析服务端口为 ${PORT}（wizard_port=${wizard_port:-空}，TRIM_SERVICE_PORT=${TRIM_SERVICE_PORT:-空}）" >> "${LOG_FILE}" 2>/dev/null
+
 # write the command to start your program here
 mkdir -p "${TRIM_PKGVAR}/data/logs" "${TRIM_PKGVAR}/data/cache"
-CMD="mkdir -p \"${TRIM_PKGVAR}/data\" && exec \"${TRIM_APPDEST}/bin/verify\" --data \"${TRIM_PKGVAR}/data\" --app-dest \"${TRIM_APPDEST}\" --addr \":${TRIM_SERVICE_PORT:-8898}\""
+CMD="mkdir -p \"${TRIM_PKGVAR}/data\" && exec \"${TRIM_APPDEST}/bin/verify\" --data \"${TRIM_PKGVAR}/data\" --app-dest \"${TRIM_APPDEST}\" --addr \":${PORT}\""
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}

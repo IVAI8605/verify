@@ -152,7 +152,7 @@ func newDirUninitialized(newDir string) bool {
 
 func main() {
 	dataDir := flag.String("data", defaultDataDir(), "数据目录")
-	addr := flag.String("addr", "", "监听地址，如 :8898")
+	addr := flag.String("addr", "", "监听地址，如 :18898")
 	appDest := flag.String("app-dest", defaultAppDest(), "应用安装目录（用于查找 ffmpeg）")
 	flag.Parse()
 

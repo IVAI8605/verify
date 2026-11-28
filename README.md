@@ -1,6 +1,6 @@
 # 查重助手（Verify）
 
-飞牛 NAS 上的重复文件清理工具。单个 Go 二进制 + 内嵌中文 Web UI + 本地 SQLite，不依赖外部服务。当前版本 **v4.3.1**。
+飞牛 NAS 上的重复文件清理工具。单个 Go 二进制 + 内嵌中文 Web UI + 本地 SQLite，不依赖外部服务。当前版本 **v4.4.0**。
 
 ## 功能
 
@@ -15,7 +15,9 @@
 
 ### 飞牛 NAS
 
-从 [Releases](https://github.com/IVAI8605/verify/releases) 下载对应版本的 `.fpk`，在应用中心手动安装。当前包未签名，安装时需在签名风险确认处放行。安装后访问 `http://<NAS>:8898`。
+从 [Releases](https://github.com/IVAI8605/verify/releases) 下载对应版本的 `.fpk`，在应用中心手动安装。当前包未签名，安装时需在签名风险确认处放行。
+
+安装向导第一步会让你选择 **Web 访问端口**，默认 **18898**（避开 8898、8080 这类常被其他应用占用的端口）。若提示端口冲突，换一个空闲端口即可，装完访问 `http://<NAS>:<你选的端口>`。
 
 数据保存在 `@appdata/verify/data`，卸载不会删除该目录。
 
@@ -23,7 +25,7 @@
 
 ```bash
 go build -o verify .
-./verify -data /path/to/data -addr :8898
+./verify -data /path/to/data -addr :18898
 ```
 
 首次运行生成 `config.json`，扫描目录、排除目录等可在 Web UI 设置页修改。视频/音频分析依赖系统 `ffmpeg` / `ffprobe`（默认 `/usr/bin/ffmpeg`，可用 `VERIFY_FFMPEG` / `VERIFY_FFPROBE` 覆盖）。

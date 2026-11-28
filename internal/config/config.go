@@ -85,7 +85,7 @@ func NormalizeMatchMode(mode string) string {
 // MatchMode 是本次查重的匹配模式。它只决定分组/结果页展示用哪套算法，
 // 不改变扫描期已算好的特征，因此切换模式不需要重扫。
 type Config struct {
-	// 监听地址，默认 :8898
+	// 监听地址，默认 :18898（v4.4.0 起避开 8898 等常用端口）
 	Addr string `json:"addr"`
 	// 数据目录（数据库、日志、配置）
 	DataDir string `json:"data_dir"`
@@ -237,7 +237,7 @@ type Config struct {
 // Default 返回默认配置。
 func Default(dataDir string) *Config {
 	return &Config{
-		Addr:                  ":8898",
+		Addr:                  ":18898",
 		DataDir:               dataDir,
 		Volumes:               nil,
 		ExcludeDirs:           []string{"@eaDir", "#recycle", ".git", "node_modules", ".verify-trash", ".Trash", "System Volume Information"},
