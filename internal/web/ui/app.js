@@ -185,12 +185,16 @@ document.addEventListener('dblclick', (ev) => {
 // 低频页打开时自动展开「更多功能」，并把所属主入口一起点亮，用户不会迷路。
 function syncNavActive(name){
   const btn = document.querySelector(`.tab[data-tab="${name}"]`);
-  const minor = !!(btn && btn.dataset.minor);
+  // data-minor / data-main 都是无值布尔属性，dataset 取到空字符串；必须用 hasAttribute。
+  const minor = !!(btn && btn.hasAttribute('data-minor'));
   document.querySelectorAll('.tab').forEach(t => {
-    const hit = t.dataset.tab === name || (minor && t.dataset.main && t.dataset.tab === btn.dataset.parent);
+    const hit = t.dataset.tab === name || (minor && t.hasAttribute('data-main') && t.dataset.tab === btn.dataset.parent);
     t.classList.toggle('active', !!hit);
   });
-  document.querySelectorAll('.bottomnav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.bottomnav button').forEach(b => {
+    const hit = b.dataset.tab === name || (minor && b.dataset.tab === btn.dataset.parent);
+    b.classList.toggle('active', hit);
+  });
   if (minor) {
     const more = $('navMore'), tog = $('navMoreToggle');
     if (more) more.hidden = false;
@@ -671,7 +675,8 @@ document.addEventListener('click', async (ev) => {
     if (S.wizard) {
       const w = S.wizard;
       // 记住进入高级模式前的简单模式选择，「返回推荐组合」时原样还原。
-      w._simple = { content: w.content, name: w.name, video: w.video, intro: w.intro, audio: w.audio, photo: w.photo, recommend: w.recommend };
+      w._simple = { content: w.content, name: w.name, video: w.video, intro: w.intro, audio: w.audio, photo: w.photo,
+        recommend: w.recommend, base: w.rules.base, attrs: (w.rules.attrs || []).slice() };
       w.recommend = false;
       w.advanced = true;
       renderWizard();
@@ -697,6 +702,10 @@ document.addEventListener('click', async (ev) => {
         w.video = w._simple.video; w.intro = w._simple.intro;
         w.audio = w._simple.audio; w.photo = w._simple.photo;
         w.recommend = w._simple.recommend;
+        // v4.5.3：高级模式里改过的 base/attrs 不能被带回简单模式，
+        // 否则界面显示「精确内容 + 同名」，实际却按上次的高级 base 扫描。
+        w.rules.base = w._simple.base;
+        w.rules.attrs = (w._simple.attrs || []).slice();
         w._simple = null;
       }
       w.advanced = false;

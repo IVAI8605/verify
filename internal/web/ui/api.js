@@ -794,7 +794,11 @@ async function onScanFinished(state){
     const pf = takePrefetch(jobTab, filters);
     if (pf && (pf.groups || []).length && tabEnabled(jobTab)) {
       S.tab = jobTab;
-      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === jobTab));
+      // v4.5.3：预取路径也走统一导航高亮，否则侧栏/底部导航停在上一页。
+      document.body.dataset.tab = jobTab;
+      syncNavActive(jobTab);
+      const prefetchTab = document.querySelector(`.tab[data-tab="${jobTab}"]`);
+      if (prefetchTab && $('screenTitle')) $('screenTitle').textContent = prefetchTab.textContent.trim();
       applyPrefetch(pf);
       reportMetric('scan_complete_to_first_screen', Date.now() - S.scanDoneAt, 'job-prefetch:' + jobTab);
     } else if (tabEnabled(jobTab)) {

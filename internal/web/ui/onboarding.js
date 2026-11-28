@@ -16,7 +16,7 @@ const ONBOARD_STEPS = [
         <li><b>保护目录</b>：绝对不想被误删的（如家庭照片原盘），标成「保护」，隔离和删除都会跳过。</li>
       </ul>
       <p class="hint">没授权就添加会提示「不可访问」。授权后如果列表还没刷新，重新打开一次设置页即可。</p>`,
-    primary: ['去设置扫描范围', () => switchTab('settings')]
+    primary: ['去设置扫描范围', () => { S.setPane = 'paths'; switchTab('settings'); }]
   },
   {
     title: '开始一次查重',
@@ -113,6 +113,9 @@ document.addEventListener('click', (e) => {
   else if (act === 'onboard-primary') {
     e.preventDefault();
     const step = ONBOARD_STEPS[onboardStep];
+    // v4.5.3：主动作会跳到别的页面，先关掉遮罩，否则按钮点了像没反应、页面被挡住。
+    closeOnboarding();
+    if (onboardStep >= ONBOARD_STEPS.length - 1) markOnboardDone();
     if (step && step.primary) { step.primary[1](); }
   }
 });

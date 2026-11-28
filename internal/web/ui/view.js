@@ -471,7 +471,7 @@ function taskHistoryHtml(){
       <span class="hint">${esc(result)} · ${fmtT(Number(t.finished_at || 0) * 1e9)}</span>
     </div>`;
   }).join('');
-  return `<div class="card" style="margin-top:var(--space-sm)"><div class="toolbar"><b>最近长任务</b><span class="hint">同类任务同日合并；失败或中断优先</span></div>${rows}</div>`;
+  return `<div class="card" style="margin-top:var(--space-sm)"><div class="toolbar"><b>最近长任务</b><span class="hint">同类任务同日合并，最多显示 3 条</span></div>${rows}</div>`;
 }
 
 async function loadTaskHistory(){

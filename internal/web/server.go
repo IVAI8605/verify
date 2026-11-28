@@ -44,7 +44,7 @@ import (
 //go:embed ui
 var uiFS embed.FS
 
-const Version = "4.5.2"
+const Version = "4.5.3"
 
 type Server struct {
 	e       *engine.Engine

@@ -680,7 +680,7 @@ function renderSettings(){
         <div class="field"><label>扫描目录</label>
           <div id="sVolsList">${(c.volumes||[]).map(v => `<div class="scanrow"><span class="mono scanpath" title="${esc(v)}">${esc(v)}</span><button class="scanx" data-act="scan-del" data-path="${esc(v)}" title="删除该目录">×</button></div>`).join('') || '<span class="hint">还没有添加目录</span>'}</div>
           <div class="asrow" style="margin-top:var(--space-2xs)"><button class="btn" data-act="pick-scan-dirs">选择文件夹</button><button class="btn ghost" data-act="scan-clear">清空</button></div>
-          <span class="help">只扫这里列出的文件夹。飞牛只允许读被授权过的目录，所以先在「飞牛系统设置 → 应用 → 查重助手」里授权，再回来添加；没授权的目录在目录树里会显示锁</span></div>
+          <span class="help">只扫这里列出的文件夹。飞牛只允许读被授权过的目录，所以先在「飞牛系统设置 → 应用 → 查重助手」里授权，再回来添加；没授权的目录在目录树里会显示锁 <span class="help-link" data-act="help-link" data-sec="permissions" title="查看权限与隐私说明">权限说明?</span></span></div>
         <div class="field"><label>不扫描的文件夹</label><textarea id="sExclPaths" placeholder="/vol1/1000/private">${esc(exclPaths)}</textarea>
           <div class="asrow" style="margin-top:var(--space-2xs)"><button class="btn" data-act="pick-excl-dirs">选择文件夹</button><button class="btn ghost" data-act="excl-clear">清空</button></div>
           <span class="help">整个文件夹连同子文件夹都不扫，也不会出现在结果里。每行一个绝对路径；也可以点「选择文件夹」从目录树里多选</span></div>
