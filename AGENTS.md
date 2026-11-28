@@ -39,7 +39,7 @@
 ### 技术约束（不要轻易打破）
 
 - Go 1.26，`CGO_ENABLED=0` 交叉编译到 `linux/amd64`；SQLite 使用纯 Go 的 `modernc.org/sqlite`
-- Web UI 通过 `go:embed ui` 内嵌，**不允许引入 CDN 或运行时前端依赖**；v3.0.0 起 `ui/` 含 `index.html` + 6 个经典脚本（helper/api/settings/view/modal/app）+ `styles.css`，由 `index.html` 按顺序 `<script defer>` 引入
+- Web UI 通过 `go:embed ui` 内嵌，**不允许引入 CDN 或运行时前端依赖**；v3.0.0 起 `ui/` 含 `index.html` + 8 个经典脚本（helper/api/api-files/settings/view/modal/onboarding/app）+ `styles.css`，由 `index.html` 按顺序 `<script defer>` 引入
 - 前端零构建是刻意的部署优势；如需拆模块，必须保证产物仍是单文件并由 `go:embed` 引用
 - **v4.0.0 起：响应契约是具名 struct（不改变零构建形态）**。规则：
   - **所有 `writeJSON` 的响应体都必须是 `internal/web/contracts*.go` 里的具名 struct**，不再用 `map[string]any`。

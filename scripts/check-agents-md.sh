@@ -66,17 +66,17 @@ fi
 
 section "前端模块文件与零外部依赖（v3.0.0 拆分）"
 ui_count=$(find internal/web/ui -type f | wc -l | tr -d ' ')
-ui_modules="helper.js api.js settings.js view.js modal.js app.js"
+ui_modules="helper.js api.js api-files.js settings.js view.js modal.js onboarding.js app.js"
 ui_missing=""
 for f in index.html styles.css $ui_modules; do
 	[ -f "internal/web/ui/$f" ] || ui_missing="$ui_missing $f"
 done
 # v3.27 类型层：类型声明放在 webtypes/ 而不是 internal/web/ui/，
-# 这样 go:embed ui 不会把编译期文件打进二进制（ui/ 里的文件数仍是 8）。
-if [ "$ui_count" = "8" ] && [ -z "$ui_missing" ]; then
-	ok "internal/web/ui 含 index.html + 6 个 JS 模块 + styles.css（go:embed 单二进制）"
+# 这样 go:embed ui 不会把编译期文件打进二进制（v4.5.0 起 ui/ 共 10 个文件）。
+if [ "$ui_count" = "10" ] && [ -z "$ui_missing" ]; then
+	ok "internal/web/ui 含 index.html + 8 个 JS 模块 + styles.css（go:embed 单二进制）"
 else
-	bad "internal/web/ui 应恰含 8 个文件，实际 $ui_count 个，缺失：${ui_missing:-无}"
+	bad "internal/web/ui 应恰含 10 个文件，实际 $ui_count 个，缺失：${ui_missing:-无}"
 fi
 
 # v3.27 类型层：类型声明必须在 ui/ 之外，否则会被 go:embed 打进二进制。

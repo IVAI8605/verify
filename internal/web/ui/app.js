@@ -181,8 +181,24 @@ document.addEventListener('dblclick', (ev) => {
   requestAnimationFrame(measureVirtualGroups);
 });
 
-async function switchTab(name){
-  // v3.8.0：旧结果标签统一映射到「结果」页 + 类型筛选，保证书签/深链仍可用。
+// v4.5.0：侧栏 5 个主入口 + 「更多功能」，底部导航同源高亮。
+// 低频页打开时自动展开「更多功能」，并把所属主入口一起点亮，用户不会迷路。
+function syncNavActive(name){
+  const btn = document.querySelector(`.tab[data-tab="${name}"]`);
+  const minor = !!(btn && btn.dataset.minor);
+  document.querySelectorAll('.tab').forEach(t => {
+    const hit = t.dataset.tab === name || (minor && t.dataset.main && t.dataset.tab === btn.dataset.parent);
+    t.classList.toggle('active', !!hit);
+  });
+  document.querySelectorAll('.bottomnav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  if (minor) {
+    const more = $('navMore'), tog = $('navMoreToggle');
+    if (more) more.hidden = false;
+    if (tog) { tog.setAttribute('aria-expanded', 'true'); tog.textContent = '收起更多功能'; }
+  }
+}
+
+async function switchTab(name){  // v3.8.0：旧结果标签统一映射到「结果」页 + 类型筛选，保证书签/深链仍可用。
   // v3.9.5：写入 URL hash，刷新/前进后退保留当前页。
   const legacyKind = {
     exact:'exact', samevideo:'samevideo', name:'name', video:'video', intro:'intro',
@@ -195,9 +211,10 @@ async function switchTab(name){
   resetAssistCache();
   // 写 hash：避免 history 栈堆积，replaceState 足够
   try { history.replaceState(null, '', '#' + name); } catch(e) {}
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.body.dataset.tab = name;
+  syncNavActive(name);
   document.body.classList.remove('nav-open');
-  const activeTab = document.querySelector('.tab.active');
+  const activeTab = document.querySelector(`.tab[data-tab="${name}"]`) || document.querySelector('.tab.active');
   if (activeTab && $('screenTitle')) $('screenTitle').textContent = activeTab.textContent.trim();
   const sh = $('screenHelp');
   if (sh) {
@@ -643,6 +660,43 @@ document.addEventListener('click', async (ev) => {
     return;
   }
   if (act === 'wiz-prev') { readWizardInputs(); S.wizard.step--; renderWizard(); return; }
+  if (act === 'wiz-advanced') {
+    if (S.wizard) {
+      const w = S.wizard;
+      // 记住进入高级模式前的简单模式选择，「返回推荐组合」时原样还原。
+      w._simple = { content: w.content, name: w.name, video: w.video, intro: w.intro, audio: w.audio, photo: w.photo, recommend: w.recommend };
+      w.recommend = false;
+      w.advanced = true;
+      renderWizard();
+    }
+    return;
+  }
+  if (act === 'wiz-recommend') {
+    const w = S.wizard;
+    if (w) {
+      w.content = true; w.name = true; w.video = false; w.intro = false; w.audio = false; w.photo = false;
+      w.rules.base = 'content'; w.rules.attrs = [];
+      w.recommend = true;
+      renderWizard();
+    }
+    return;
+  }
+  if (act === 'wiz-advanced-off') {
+    if (S.wizard) {
+      const w = S.wizard;
+      readWizardInputs();
+      if (w._simple) {
+        w.content = w._simple.content; w.name = w._simple.name;
+        w.video = w._simple.video; w.intro = w._simple.intro;
+        w.audio = w._simple.audio; w.photo = w._simple.photo;
+        w.recommend = w._simple.recommend;
+        w._simple = null;
+      }
+      w.advanced = false;
+      renderWizard();
+    }
+    return;
+  }
   if (act === 'wiz-next') { await wizardNext(); return; }
   if (act === 'wiz-cancel') { cancelWizard(); return; }
   if (act === 'pick-scan-dirs') {
@@ -1495,7 +1549,37 @@ $('loginBtn').addEventListener('click', async () => {
 });
 $('tokenInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click(); });
 
-document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+// v4.5.0：导航统一事件委托（侧栏、更多功能、底部导航共用一套 data-tab）
+document.addEventListener('click', (ev) => {
+  const nav = ev.target.closest('.bottomnav button[data-tab], .tab[data-tab]');
+  if (!nav) return;
+  ev.preventDefault();
+  switchTab(nav.dataset.tab);
+});
+(function bindNavMore(){
+  const tog = $('navMoreToggle'), more = $('navMore');
+  if (!tog || !more) return;
+  tog.addEventListener('click', () => {
+    const open = more.hidden;
+    more.hidden = !open;
+    tog.setAttribute('aria-expanded', open ? 'true' : 'false');
+    tog.textContent = open ? '收起更多功能' : '更多功能';
+  });
+})();
+// v4.5.0：概览的两处小交互——令牌提示只提示一次、跳过明细可展开
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act;
+  if (act === 'token-notice-close') {
+    ev.preventDefault();
+    try { localStorage.setItem('verify.tokenNotice', '1'); } catch(e) {}
+    const n = el.closest('.notice'); if (n) n.remove();
+  } else if (act === 'skip-detail') {
+    ev.preventDefault();
+    showSkipDetail();
+  }
+});
 
 document.addEventListener('change', async e => {
   if (e.target && e.target.dataset && e.target.dataset.act === 'sync-file') {
@@ -1632,6 +1716,8 @@ async function boot(){
     loadUnfinishedBatches();
     if (S.tab === 'overview') renderOverview(st);
     else await switchTab(S.tab);
+    // v4.5.0：首次使用引导（设置里可重新打开）
+    if (typeof maybeShowOnboarding === 'function') maybeShowOnboarding();
   } catch(e) {
     if (String(e.message).includes('令牌')) { showLogin(); return; }
     toast(e.message, 'err');

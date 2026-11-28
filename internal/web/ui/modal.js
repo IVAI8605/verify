@@ -334,7 +334,8 @@ function renderWizard(){
   if (w.intro) bases.push('片头指纹');
   if (w.audio) bases.push('音频指纹');
   if (w.photo) bases.push('图片指纹');
-  const step1 = `
+  const step1Advanced = `
+    <p><button class="btn ghost" data-act="wiz-advanced-off">← 返回推荐组合</button></p>
     ${(() => {
       const presets = (((S.status || {}).config || {}).search_presets) || [];
       if (!presets.length) return '';
@@ -368,6 +369,22 @@ function renderWizard(){
       <label class="checkline"><input id="wizCase" type="checkbox" ${r.case_sensitive?'checked':''}> 区分大小写</label>
     </div>
     <div class="hint" style="margin-top:12px">将自动计算：${esc(bases.join('、') || '仅元数据')}。元数据类规则不会重算 BLAKE3，切回内容查重时需要重扫。</div>`;
+  // v4.5.0：默认只展示「推荐组合」，规则组合收进高级模式；
+  // 大多数用户只需要「选文件夹 → 开始」，不必先理解 DC5 规则。
+  const recBases = !!w.recommend;
+  const step1Simple = `
+    <div class="field" style="max-width:560px">
+      <label>${recBases ? '推荐组合（精确内容 + 同名文件）' : '本次将按上次设置扫描'}</label>
+      <div class="wsumcard">
+        <div><b>将扫描：</b>${esc(bases.join('、') || '仅元数据')}</div>
+        <div><b>规则：</b>${esc(SEARCH_BASE_LABELS[r.base] || r.base)}${(r.attrs||[]).length ? ' · ' + (r.attrs||[]).map(a => SEARCH_ATTR_LABELS[a] || a).join(' + ') : ''}</div>
+        <div class="hint">精确重复按内容逐字节比对；同名文件只按文件名归组，内容不一定相同。相似视频/片头/音频/图片是否启用，取决于这里的扫描依据与设置页开关。</div>
+      </div>
+    </div>
+    ${recBases ? '' : '<p><button class="btn" data-act="wiz-recommend">用推荐组合（精确内容 + 同名文件）</button><span class="hint"> 只扫这两类，最快出第一批结果</span></p>'}
+    <p class="hint">需要改大小容差、相似名阈值、忽略副本这类组合规则，再打开高级模式。</p>
+    <p><button class="btn ghost" data-act="wiz-advanced">打开高级模式</button></p>`;
+  const step1 = w.advanced ? step1Advanced : step1Simple;
   const step2 = `
     <div class="section-title">扫描文件夹与排除（左侧点选目录 → › 加入右侧；右侧可标「排除」「保护」）</div>
     <div id="tfScan"></div>
@@ -414,6 +431,8 @@ async function openWizard(){
   const ffOk = !!(ff && ff.available);
   S.wizard = {
     step: 1,
+    advanced: false,
+    recommend: false,
     content: c.content_enabled !== false,
     name: c.name_enabled !== false,
     video: ffOk && c.video_enabled !== false,
@@ -502,19 +521,23 @@ function filtersHtml(kind){
           <option value="desc"${S.sortOrder!=='asc'?' selected':''}>降序</option>
           <option value="asc"${S.sortOrder==='asc'?' selected':''}>升序</option>
         </select>
-        <button class="btn ghost" data-act="rule-search-again">重新搜索</button>
-        <button class="btn ghost" data-act="rule-search-export" title="导出当前类型与关键字筛选后的快照（CSV）">导出 CSV</button>
-        ${exportTools}
-        <button class="btn ghost" data-act="report" title="生成当前结果的 HTML 报告（在服务端生成，可在浏览器新窗口打开）">HTML 报告</button>
-        <button class="btn" data-act="gen-thumbs">${S.genThumbs?'收起缩略图':'生成缩略图'}</button>
-        <span class="tb-sep" aria-hidden="true"></span>
         <button class="btn danger" data-act="trash-selected" title="把当前勾选的全部文件移入隔离区（先预览再确认）">把当前勾选移入隔离区</button>
         <span class="hint" id="selHint"></span>
         <div class="spacer"></div>
         ${rs.stale ? '<span class="badge warn">结果可能已过期</span>' : ''}
         <span class="hint">${(rs.totals && rs.totals.files || 0).toLocaleString()} 个文件 · 可释放 ${fmtB(rs.totals && rs.totals.waste || 0)}</span>
       </div>
-      ${(selTools || introTools || videoTools) ? `<div class="toolbar">${introTools}${videoTools}${selTools}</div>` : ''}`;
+      <details class="more-ops"${(selTools || introTools || videoTools) ? '' : ''}>
+        <summary>更多操作</summary>
+        <div class="more-ops-body">
+          <button class="btn ghost" data-act="rule-search-again">重新搜索</button>
+          <button class="btn ghost" data-act="rule-search-export" title="导出当前类型与关键字筛选后的快照（CSV）">导出 CSV</button>
+          ${exportTools}
+          <button class="btn ghost" data-act="report" title="生成当前结果的 HTML 报告（在服务端生成，可在浏览器新窗口打开）">HTML 报告</button>
+          <button class="btn" data-act="gen-thumbs">${S.genThumbs?'收起缩略图':'生成缩略图'}</button>
+          ${selTools}${introTools}${videoTools}
+        </div>
+      </details>`;
   }
 }
 
@@ -638,6 +661,14 @@ function openTrimPanel(key){
 
 // ---------- 操作手册（v1.30.0）：内嵌章节，可折叠，? 深链接 ----------
 const HELP_SECTIONS = [
+  { id:'terms', title:'术语表（先看这页）', body:`
+    <p>界面里只用下面这四个说法，看到同义词一律按这里理解：</p>
+    <p><b>隔离区</b>：各卷根的 <code>.verify-trash</code>。移进来的文件还能恢复，不算删除。<br>
+    <b>永久删除</b>：真正从磁盘删除，不可撤销；只在隔离区页提供，且要先勾选确认。<br>
+    <b>剪除</b>：只针对视频，把片头/片尾那一段去掉，生成新文件或把原文件放进隔离区。<br>
+    <b>整理</b>：批量移动、重命名、繁简转换、入转码队列这类「不删只改」的动作。</p>
+    <p><b>可释放空间</b>：只统计精确重复（内容完全一致）能省下的空间。同名文件只是名字一样，内容不一定相同，单独列成「待判断」，不计入可释放。</p>
+    <p>旧文档或截图里出现的「回收站 / 垃圾箱」都指隔离区；「清理」「去重」是泛称，具体看按钮文字。</p>` },
   { id:'flow', title:'工作方式', body:`
     <p>首次安装后可手动开始扫描；之后文件变化会被实时监控并增量更新索引，不用反复全盘重扫。</p>
     <p><b>精确重复</b>先对头尾各 4KB 做预哈希，再对候选做 BLAKE3 整文件校验，保证字节级一致；「快速查重」只跑这两步，跳过视频分析。</p>

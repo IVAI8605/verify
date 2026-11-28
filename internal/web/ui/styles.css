@@ -16,10 +16,10 @@
   --space-3xs:2px; --space-2xs:4px; --space-xs:8px; --space-sm:12px; --space-md:16px;
   --space-lg:24px; --space-xl:40px; --space-2xl:64px; --space-3xl:96px;
   /* type: 1.2 ratio from a 16px body */
-  --text-2xs:0.625rem; --text-xs:0.75rem; --text-sm:0.875rem; --text-md:1rem; --text-lg:1.2rem;
+  --text-2xs:0.75rem; --text-xs:0.75rem; --text-sm:0.875rem; --text-md:1rem; --text-lg:1.2rem;
   --text-xl:1.44rem; --text-2xl:1.728rem; --text-3xl:2.074rem; --text-4xl:2.488rem;
   /* 组件级字号：表单选项标签、图表内嵌文字（收口裸 px，值与原视觉等价） */
-  --text-control:0.8125rem; --text-chart-total:0.6875rem; --text-chart-sub:0.375rem;
+  --text-control:0.8125rem; --text-chart-total:0.6875rem; --text-chart-sub:0.5rem;
   /* colour: Cobalt, tinted to 250-262, no absolute */
   --color-paper:oklch(98.6% 0.005 250);
   --color-paper-2:oklch(96.2% 0.008 252);
@@ -839,3 +839,95 @@ th[data-sort-col].sorted[data-sort-dir="-1"]::after{content:' ▼';font-size:var
 .rulergrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:var(--space-xs) var(--space-sm);margin-bottom:var(--space-sm)}
 .rulebar{display:flex;align-items:center;gap:var(--space-xs);flex-wrap:wrap;margin-bottom:var(--space-sm)}
 .rulebar .spacer{flex:1;min-width:var(--space-sm)}
+
+/* ============ v4.5.0 界面收敛 ============ */
+
+/* 侧栏：主入口 5 个 + 「更多功能」折叠；低频页仍一步直达 */
+.nav-more{margin-top:var(--space-md)}
+.nav-more[hidden]{display:none}
+.nav-more-toggle{
+  margin-top:var(--space-xs);height:32px;border:var(--rule-hair) solid var(--color-rule);
+  border-radius:var(--radius-input);background:transparent;color:var(--color-muted);
+  font-size:var(--text-xs);cursor:pointer;
+}
+.nav-more-toggle:hover{color:var(--color-ink);background:var(--color-paper-3)}
+.nav-more-toggle[aria-expanded="true"]{color:var(--color-ink-2);border-color:var(--color-rule-2)}
+.tab[data-main]{font-weight:500}
+.tab[data-minor]{padding-left:var(--space-md);color:var(--color-muted)}
+.tab[data-minor].active{color:var(--color-accent-deep)}
+
+/* 结果页：次要操作收进「更多操作」，主操作（排序/隔离）常驻 */
+.more-ops{margin:0 0 var(--space-xs)}
+.more-ops>summary{
+  cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;
+  height:32px;padding:0 var(--space-xs);border-radius:var(--radius-input);
+  color:var(--color-muted);font-size:var(--text-sm);user-select:none;
+}
+.more-ops>summary::-webkit-details-marker{display:none}
+.more-ops>summary::before{content:'▸';font-size:var(--text-xs);transition:transform var(--dur-micro) var(--ease-out)}
+.more-ops[open]>summary::before{transform:rotate(90deg)}
+.more-ops>summary:hover{background:var(--color-paper-3);color:var(--color-ink)}
+.more-ops-body{display:flex;flex-wrap:wrap;gap:var(--space-xs);padding:var(--space-xs) 0 var(--space-2xs)}
+
+/* 概览：可释放主数字只统计精确重复，同名单列为「待判断」 */
+.ledger-note{display:flex;flex-wrap:wrap;gap:var(--space-xs) var(--space-lg)}
+.ledger-note .note-line{display:block}
+.ledger-note .note-sub{color:var(--color-muted);font-size:var(--text-xs)}
+.fig-pair dt{display:flex;align-items:center;gap:var(--space-2xs)}
+
+/* 概览：访问令牌提示可关闭；跳过明细按钮与空状态提示 */
+.notice-dismiss{display:flex;align-items:center;justify-content:space-between;gap:var(--space-sm)}
+.notice-dismiss .btn{margin-left:auto;flex:none}
+.skip-detail-list{margin:0;padding-left:var(--space-lg);line-height:1.8}
+
+/* 移动端底部导航（≤48rem 才出现；侧栏抽屉仍可用） */
+.bottomnav{display:none}
+@media (max-width:48rem){
+  .bottomnav{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:2px;
+    position:fixed;left:0;right:0;bottom:0;z-index:var(--z-sticky);
+    padding:var(--space-2xs) var(--space-2xs) calc(var(--space-2xs) + env(safe-area-inset-bottom,0px));
+    background:var(--color-paper);border-top:var(--rule-hair) solid var(--color-rule);
+  }
+  .bottomnav button{
+    height:44px;border:0;border-radius:var(--radius-input);background:transparent;
+    color:var(--color-muted);font-size:var(--text-sm);cursor:pointer;
+  }
+  .bottomnav button.active{color:var(--color-accent-deep);background:var(--color-accent-wash);font-weight:600}
+  main#view{padding-bottom:calc(var(--space-2xl) + 56px)}
+  .to-top{bottom:calc(var(--space-lg) + 56px + env(safe-area-inset-bottom,0px))}
+}
+
+/* 首次使用引导 */
+.onboard[hidden]{display:none}
+.onboard{
+  position:fixed;inset:0;z-index:90;display:grid;place-items:center;
+  padding:var(--space-md);background:color-mix(in oklab,var(--color-graphite) 55%,transparent);
+  backdrop-filter:blur(2px);
+}
+.onboard-box{
+  width:min(620px,100%);max-height:86vh;overflow:auto;
+  background:var(--color-paper);border:var(--rule-hair) solid var(--color-rule);
+  border-radius:var(--radius-card);box-shadow:var(--shadow-drawer);
+  padding:var(--space-lg) var(--space-lg) var(--space-md);
+}
+.onboard-top{display:flex;align-items:center;gap:var(--space-sm);margin-bottom:var(--space-md)}
+.onboard-dots{display:flex;gap:6px;flex:1}
+.onboard-dots i{width:8px;height:8px;border-radius:var(--radius-pill);background:var(--color-rule-2)}
+.onboard-dots i.on{background:var(--color-accent)}
+.onboard-box h2{margin:0 0 var(--space-sm);font-size:var(--text-xl);letter-spacing:-0.01em}
+.onboard-box p{margin:0 0 var(--space-sm);color:var(--color-ink-2);line-height:1.75}
+.onboard-list{margin:0 0 var(--space-sm);padding-left:var(--space-lg);line-height:1.85;color:var(--color-ink-2)}
+.onboard-list b{color:var(--color-ink)}
+.onboard-primary{margin-top:var(--space-md)}
+.onboard-foot{display:flex;align-items:center;gap:var(--space-xs);margin-top:var(--space-md);padding-top:var(--space-sm);border-top:var(--rule-hair) solid var(--color-rule)}
+.onboard-foot .spacer{flex:1}
+body.onboard-open{overflow:hidden}
+
+/* 新建查重的「推荐组合」摘要卡 */
+.wsumcard{
+  display:grid;gap:var(--space-2xs);padding:var(--space-sm);
+  border:var(--rule-hair) solid var(--color-rule);border-radius:var(--radius-input);
+  background:var(--color-paper-2);font-size:var(--text-sm);color:var(--color-ink-2);line-height:1.7;
+}
+.wsumcard b{color:var(--color-ink)}

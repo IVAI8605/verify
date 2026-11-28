@@ -44,7 +44,7 @@ import (
 //go:embed ui
 var uiFS embed.FS
 
-const Version = "4.4.0"
+const Version = "4.5.0"
 
 type Server struct {
 	e       *engine.Engine
@@ -345,10 +345,12 @@ func (s *Server) handleTasksResume(w http.ResponseWriter, r *http.Request) {
 
 // uiAssets 是允许通过 /ui/<name> 访问的内嵌资源白名单。
 // v3.0.0 起 app.js 按职责拆成六个脚本，白名单同步扩容；
+// v4.5.0 起新增 api-files.js（搜索结果/改名段）与 onboarding.js（新手引导）。
 // 只认文件名（filepath.Base），任何目录片段都会被拒绝。
 var uiAssets = map[string]bool{
-	"helper.js": true, "api.js": true, "settings.js": true,
-	"view.js": true, "modal.js": true, "app.js": true, "styles.css": true,
+	"helper.js": true, "api.js": true, "api-files.js": true,
+	"settings.js": true, "view.js": true, "modal.js": true,
+	"onboarding.js": true, "app.js": true, "styles.css": true,
 }
 
 // handleUIAsset 返回拆分后的前端资源（v1.20：ui/app.js、ui/styles.css）。

@@ -170,7 +170,10 @@ function renderProgress(state){
     bar.classList.remove('indet');
     const pct = Math.min(100, Math.max(0, state.done / state.total * 100));
     fill.style.setProperty('--p', (pct / 100).toFixed(4));
-    $('ptext').textContent = '已用 ' + fmtElapsed(elapsed) + ' · ' + state.done + ' / ' + state.total;
+    // v4.5.0：按当前速度给出预计剩余时间，避免长任务看起来「卡住」
+    const remain = state.done > 0 ? Math.max(0, elapsed * (state.total - state.done) / state.done) : 0;
+    const eta = remain > 0 && remain < 86400 ? ' · 约剩 ' + fmtElapsed(remain) : '';
+    $('ptext').textContent = '已用 ' + fmtElapsed(elapsed) + eta + ' · ' + state.done + ' / ' + state.total;
   } else {
     bar.classList.add('indet');
     fill.style.removeProperty('--p');
@@ -182,7 +185,8 @@ function renderProgress(state){
 // 只更新固定容器，不整页重绘，避免打断用户操作。
 function scanSummaryHtml(state){
   if (!state || (!state.running && !state.finished_at)) return '';
-  const phase = PHASE_LABELS[state.phase] || '准备中';
+  // v4.5.0：结束后不再显示「准备中」——phase 为空时按「已完成」呈现，避免自相矛盾。
+  const phase = PHASE_LABELS[state.phase] || (state.running ? '准备中' : '已完成');
   const title = state.message || (state.running ? '正在扫描' : '本次扫描');
   const files = Number(state.scanned_files || 0);
   const bytes = Number(state.scanned_bytes || 0);
@@ -196,6 +200,7 @@ function scanSummaryHtml(state){
   const stage = total > 0
     ? `${done.toLocaleString()} / ${total.toLocaleString()}（${Math.round(done / total * 100)}%）`
     : (state.running ? '统计中' : '—');
+  const stageSub = state.running ? '进行中' : '已完成';
   const skipText = state.skip_reason
     || (skipped || skippedDirs ? `跳过 ${skipped} 个文件、${skippedDirs} 个文件夹` : '没有跳过文件');
   return `<section class="section scan-summary" aria-label="本次扫描概况">
@@ -203,9 +208,9 @@ function scanSummaryHtml(state){
     <p class="hint">${esc(title)}${state.running ? ' · 随时可以停止' : ''}</p>
     <dl class="facts">
       <div class="fact"><dt>已扫描文件</dt><dd>${files.toLocaleString()}<span class="sub">范围共 ${fmtB(bytes)}</span></dd></div>
-      <div class="fact"><dt>当前阶段</dt><dd>${esc(stage)}<span class="sub">${esc(phase)}</span></dd></div>
+      <div class="fact"><dt>当前阶段</dt><dd>${esc(stage)}<span class="sub">${esc(phase)} · ${stageSub}</span></dd></div>
       <div class="fact"><dt>已用时</dt><dd>${fmtElapsed(elapsed)}<span class="sub">${state.running ? '进行中' : '已结束'}</span></dd></div>
-      <div class="fact"><dt>跳过</dt><dd>${skipped.toLocaleString()} 个文件<span class="sub">${esc(skipText)}</span></dd></div>
+      <div class="fact"><dt>跳过</dt><dd>${skipped.toLocaleString()} 个文件<span class="sub">${esc(skipText)} <button class="btn ghost" data-act="skip-detail">看明细</button></span></dd></div>
     </dl>
   </section>`;
 }
@@ -230,8 +235,8 @@ function renderTypeChart(state){
   const totalFiles = types.reduce((a, t) => a + Number(t.files || 0), 0);
   const useBytes = totalBytes > 0;
   const total = useBytes ? totalBytes : totalFiles;
-  let items = types.slice(0, 8);
-  const rest = types.slice(8);
+  let items = types.slice(0, 5);
+  const rest = types.slice(5);
   if (rest.length) {
     items.push({
       ext: '', other: true,
@@ -337,20 +342,43 @@ function renderPhaseSteps(state){
   $('phase').innerHTML = chips + (state.message ? `<span class="hint">${esc(state.message)}</span>` : '');
 }
 
-// 概览页自带一个更大的「新建查重」，顶栏那个同功能主按钮要收起来，
-// 同一屏不该出现两个一模一样的实心主操作。首屏走的是 boot → renderOverview，
-// 不经过 switchTab，所以两边都要调它。
-function syncScanBtn(tab){
+// v4.5.0：令牌提示只在第一次看到时出现，点过「知道了」后不再常驻。
+function tokenNoticeSeen(){
+  try { return localStorage.getItem('verify.tokenNotice') === '1'; } catch(e) { return true; }
+}
+
+// v4.5.0：扫描「跳过 / 读取失败」不再只是一个数字，点开能看到分类明细与去处。
+function showSkipDetail(){
+  const st = (S.status && S.status.state) || {};
+  const skipped = Number(st.skipped || 0);
+  const dirs = Number(st.skipped_dirs || 0);
+  const reason = st.skip_reason || '';
+  const html = `<p class="hint">本次扫描跳过 ${skipped.toLocaleString()} 个文件、${dirs.toLocaleString()} 个文件夹。常见原因：</p>
+    <ul class="skip-detail-list">
+      <li><b>小于「最小文件大小」</b>：小文件查重收益低，可在设置 → 扫描与性能 调低（填 0 表示不限制）。</li>
+      <li><b>排除目录</b>：设置 → 路径与安全 的「排除路径 / 排除目录」不会扫描，也不会进入结果。</li>
+      <li><b>读取失败</b>：权限不足、文件损坏或正在被其他程序占用；失败明细会写进日志，界面只给汇总。</li>
+      <li><b>编码异常的文件名</b>：暂不支持操作，会在「文件健康」页单独列出。</li>
+    </ul>
+    ${reason ? `<p class="hint">服务端给出的原因摘要：${esc(reason)}</p>` : ''}
+    <p class="hint">去掉误跳过的原因后，重新扫描一次即可纳入。</p>`;
+  setModal('跳过明细', html, null);
+}
+
+
+function syncScanBtn(){
   const sb = $('scanBtn');
-  if (sb) sb.style.display = tab === 'overview' ? 'none' : '';
+  if (sb) sb.style.display = '';
 }
 
 function renderOverview(st){
   syncScanBtn('overview');
   const c = st.counts || {}, state = st.state || {};
   const vols = st.volumes || [];
-  const reclaim = (c.exact_waste || 0) + (c.name_waste || 0);
+  // v4.5.0：可释放空间只统计精确重复；同名/相似只作整理参考，不能算「可释放」。
+  const reclaim = c.exact_waste || 0;
   const exactGroups = c.exact_groups || 0, nameGroups = c.name_groups || 0;
+  const nameWaste = c.name_waste || 0;
   const volHtml = vols.length ? vols.map(v => {
     const used = Math.max(0, (v.total||0) - (v.free||0));
     const pct = v.total ? (used / v.total * 100) : 0;
@@ -360,10 +388,10 @@ function renderOverview(st){
   }).join('') : `<p class="vol-empty">还没有扫描目录。存储卷只列出扫描范围内的卷，到「设置 → 扫描范围」添加后显示占用。</p>`;
   const noteHtml = (exactGroups + nameGroups) > 0
     ? `<div class="ledger-note">
-        <span>精确重复 ${exactGroups.toLocaleString()} 组，${(c.exact_files||0).toLocaleString()} 个文件，${fmtB(c.exact_waste)}</span>
-        <span>同名文件 ${nameGroups.toLocaleString()} 组，${fmtB(c.name_waste)}</span>
+        <span class="note-line"><b>精确重复</b> ${exactGroups.toLocaleString()} 组 · ${(c.exact_files||0).toLocaleString()} 个文件 · 可释放 ${fmtB(c.exact_waste)}</span>
+        <span class="note-line note-sub">另有同名文件 ${nameGroups.toLocaleString()} 组（${fmtB(nameWaste)}）：只是名字一样，内容不一定相同，<b>同名不等于重复</b>，不计入可释放空间。</span>
       </div>`
-    : `<div class="ledger-note"><span>库里还没有重复文件。新建一次查重，这里会给出能收回多少空间。</span></div>`;
+    : `<div class="ledger-note"><span class="note-line">库里还没有重复文件。新建一次查重，这里会给出能收回多少空间。</span></div>`;
   // v3.9.0：当前搜索规则的结果摘要（概览的旧计数不含“按大小”等新规则）。
   const rs = (S.ruleSearch && S.ruleSearch.state === 'ready') ? S.ruleSearch : null;
   const ruleNote = rs ? `<div class="notice">
@@ -374,9 +402,8 @@ function renderOverview(st){
   $('view').innerHTML = `
     <section class="ledger" aria-label="可释放空间与存储卷">
       <div class="ledger-fig">
-        <dl class="fig-pair"><dt>可释放空间</dt><dd>${fmtB(reclaim)}</dd></dl>
+        <dl class="fig-pair"><dt>可释放空间 <span class="hint">仅精确重复</span></dt><dd>${fmtB(reclaim)}</dd></dl>
         ${noteHtml}
-        <button class="btn primary btn-lg ov-newscan" data-act="new-scan">新建查重</button>
       </div>
       <div class="ledger-vols">
         <div class="ledger-head"><span>存储卷</span><span>已用</span><span></span></div>
@@ -384,7 +411,7 @@ function renderOverview(st){
       </div>
     </section>
     ${ruleNote}
-    ${(st.auth && st.auth.required) ? `<div class="notice">已启用访问令牌：局域网内打开页面需要先输入令牌。首次启动自动生成的令牌保存在数据目录的 <span class="mono">access-token.txt</span>；登录后可在「设置 → 访问令牌」查看、更换或清除。</div>` : ''}
+    ${(st.auth && st.auth.required && !tokenNoticeSeen()) ? `<div class="notice notice-dismiss"><span>已启用访问令牌：局域网内打开页面需要先输入令牌。首次启动自动生成的令牌保存在数据目录的 <span class="mono">access-token.txt</span>；登录后可在「设置 → 访问令牌」查看、更换或清除。</span><button class="btn ghost" data-act="token-notice-close">知道了</button></div>` : ''}
     ${(state.running || state.finished_at > 0) ? `<div id="scanSummary">${scanSummaryHtml(state)}</div>` : ''}
     ${st.cleanup ? `<div class="notice">
       上次自动清理：${fmtT(Number(st.cleanup.last_run) * 1e9)} · ${esc(st.cleanup.name || '')} · ${esc(st.cleanup.last_result || '')}${st.cleanup.last_error ? '（错误：' + esc(st.cleanup.last_error) + '）' : ''}
@@ -414,16 +441,33 @@ function renderOverview(st){
 // taskHistoryHtml 渲染最近 5 条长任务收尾记录（v3.24.0）。
 // 数据来自 /api/tasks 的 history，只读展示，不参与任何调度。
 function taskHistoryHtml(){
-  const list = (S.taskHistory || []).slice(-5).reverse();
-  if (!list.length) return '';
+  const raw = (S.taskHistory || []).slice(-12).reverse();
+  if (!raw.length) return '';
   const kindText = {scan:'扫描', health:'健康检测', video:'视频分析', trim:'剪除片头', transcode:'转码',
     crop:'识别竖横屏', thumb:'缩略图', index_repair:'索引体检', cleanup:'清理计划', trash:'批量隔离',
     rename:'改名', import:'导入'};
-  const rows = list.map(t => `<div class="asrow" style="justify-content:space-between;align-items:center;padding:2px 0;gap:8px">
-    <span>${esc(t.name || kindText[t.kind] || t.kind || '任务')}</span>
-    <span class="hint">${esc(t.result === 'canceled' ? '已取消' : (t.result === 'done' ? '已完成' : (t.result || '')))} · ${fmtT(Number(t.finished_at || 0) * 1e9)}</span>
-  </div>`).join('');
-  return `<div class="card" style="margin-top:var(--space-sm)"><div class="toolbar"><b>最近长任务</b><span class="hint">扫描、转码、改名等任务的收尾结果</span></div>${rows}</div>`;
+  // v4.5.0：同类任务同一天合并成一条（原来三条「健康检测 已完成」并排，纯噪音）。
+  const dayOf = ts => {
+    const d = new Date(Number(ts || 0) * 1000);
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  };
+  const merged = [];
+  raw.forEach(t => {
+    const key = `${t.kind || ''}|${t.result || ''}|${dayOf(t.finished_at)}`;
+    const hit = merged.find(x => x.key === key);
+    if (hit) { hit.count += 1; return; }
+    merged.push({ key, first: t, count: 1 });
+  });
+  const rows = merged.slice(0, 3).map(g => {
+    const t = g.first;
+    const label = t.name || kindText[t.kind] || t.kind || '任务';
+    const result = t.result === 'canceled' ? '已取消' : (t.result === 'done' ? '已完成' : (t.result || ''));
+    return `<div class="asrow" style="justify-content:space-between;align-items:center;padding:2px 0;gap:8px">
+      <span>${esc(label)}${g.count > 1 ? ` <span class="badge">×${g.count}</span>` : ''}</span>
+      <span class="hint">${esc(result)} · ${fmtT(Number(t.finished_at || 0) * 1e9)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="card" style="margin-top:var(--space-sm)"><div class="toolbar"><b>最近长任务</b><span class="hint">同类任务同日合并；失败或中断优先</span></div>${rows}</div>`;
 }
 
 async function loadTaskHistory(){
@@ -669,7 +713,7 @@ function renderGroups(){
   const head = filtersHtml(S.tab);
   if (!visibleGroups().length) {
     const empty = S.tab === 'results'
-      ? '当前筛选下没有重复分组<br><span class="hint">可以切换类型、调整筛选条件，或点「重新搜索」。</span>'
+      ? `当前筛选下没有重复分组<br><span class="hint">可以切换类型、调整筛选条件，或点「重新搜索」。</span><p style="margin-top:12px"><button class="btn primary" data-act="new-scan">新建查重</button></p>`
       : '没有找到重复分组<br><span class="hint">尝试调整筛选条件，或先执行一次扫描。</span>';
     view.innerHTML = wrapResult(head, `<div class="empty" style="margin:20px 0">${empty}</div>`);
     updateSelHint();

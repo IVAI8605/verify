@@ -13,35 +13,36 @@
     <div class="side-top">
       <span class="mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/><path d="M8 9.5h5M8 12h5"/></svg></span>
       <span class="wordmark">查重助手</span>
-      <span class="ver mono" id="ver">v4.4.0</span>
+      <span class="ver mono" id="ver">v4.5.0</span>
     </div>
     <nav class="side-nav" id="tabs">
       <div class="ngroup">
         <button class="tab" data-tab="overview">概览</button>
       </div>
-      <div class="ngroup tint">
-        <span class="ngroup-label">查重</span>
-        <button class="tab" data-tab="results">结果</button>
+      <div class="ngroup">
+        <button class="tab" data-main data-tab="results">查重</button>
       </div>
       <div class="ngroup">
-        <span class="ngroup-label">整理</span>
-        <button class="tab" data-tab="big">大文件</button>
-        <button class="tab" data-tab="search">文件搜索</button>
-        <button class="tab" data-tab="rename">重命名</button>
-        <button class="tab" data-tab="transcode">视频转码</button>
-      </div>
-      <div class="ngroup tint">
-        <span class="ngroup-label">文件</span>
-        <button class="tab" data-tab="health">文件健康</button>
-        <button class="tab" data-tab="trash">隔离区</button>
-        <button class="tab" data-tab="import">导入</button>
+        <button class="tab" data-main data-tab="big">大文件</button>
       </div>
       <div class="ngroup">
-        <span class="ngroup-label">系统</span>
-        <button class="tab" data-tab="help">操作手册</button>
-        <button class="tab" data-tab="oplog">操作记录</button>
-        <button class="tab" data-tab="settings">设置</button>
+        <button class="tab" data-main data-tab="health">文件</button>
       </div>
+      <div class="ngroup">
+        <button class="tab" data-main data-tab="settings">设置</button>
+      </div>
+      <!-- v4.5.0：低频入口收进「更多」，主路径只保留 5 个；点开仍是一步直达 -->
+      <div class="ngroup nav-more" id="navMore" hidden>
+        <span class="ngroup-label">更多功能</span>
+        <button class="tab" data-minor data-parent="big" data-tab="search">文件搜索</button>
+        <button class="tab" data-minor data-parent="big" data-tab="rename">重命名</button>
+        <button class="tab" data-minor data-parent="big" data-tab="transcode">视频转码</button>
+        <button class="tab" data-minor data-parent="health" data-tab="trash">隔离区</button>
+        <button class="tab" data-minor data-parent="health" data-tab="import">导入</button>
+        <button class="tab" data-minor data-parent="settings" data-tab="oplog">操作记录</button>
+        <button class="tab" data-minor data-parent="settings" data-tab="help">操作手册</button>
+      </div>
+      <button class="nav-more-toggle" id="navMoreToggle" type="button" aria-expanded="false" aria-controls="navMore">更多功能</button>
     </nav>
     <div class="side-foot">
       <span class="hint">删除先进隔离区，可恢复</span>
@@ -110,15 +111,41 @@
 
 <div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 
+<!-- v4.5.0：窄屏底部四项主入口，其余能力仍在侧栏「更多功能」里 -->
+<nav class="bottomnav" aria-label="移动端主导航">
+  <button data-tab="overview">概览</button>
+  <button data-tab="results">查重</button>
+  <button data-tab="health">文件</button>
+  <button data-tab="settings">设置</button>
+</nav>
+
+<!-- v4.5.0：首次使用引导（三步），可在设置里重新打开 -->
+<div class="onboard" id="onboard" hidden>
+  <div class="onboard-box" role="dialog" aria-modal="true" aria-labelledby="onboardTitle">
+    <div class="onboard-top">
+      <span class="onboard-dots" id="onboardDots"></span>
+      <button class="btn ghost" data-act="onboard-skip">跳过</button>
+    </div>
+    <div id="onboardBody"></div>
+    <div class="onboard-foot">
+      <button class="btn ghost" data-act="onboard-prev">上一步</button>
+      <div class="spacer"></div>
+      <button class="btn primary" data-act="onboard-next">下一步</button>
+    </div>
+  </div>
+</div>
+
 <!-- v3.10.1：所有页面通用的返回顶部按钮，长结果滚动后才显示 -->
 <button class="to-top" id="toTop" type="button" aria-label="返回顶部" title="返回顶部">↑<span>顶部</span></button>
 
 <!-- v3.0.0：app.js 按职责拆成六个经典脚本，defer 保证按顺序执行；无 ES module、无构建 -->
 <script src="ui/helper.js" defer></script>
 <script src="ui/api.js" defer></script>
+<script src="ui/api-files.js" defer></script>
 <script src="ui/settings.js" defer></script>
 <script src="ui/view.js" defer></script>
 <script src="ui/modal.js" defer></script>
+<script src="ui/onboarding.js" defer></script>
 <script src="ui/app.js" defer></script>
 </body>
 </html>

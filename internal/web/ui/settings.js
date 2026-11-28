@@ -582,6 +582,11 @@ function renderSettings(){
       ${ff.available ? `<div>${hwLine}</div>` : ''}
       <div>比对方式：先比头尾各 4KB，再整份逐字节校验（${esc(hash.algo || 'BLAKE3-256')}）。</div>
     </div>
+    <div class="toolbar">
+      <span class="hint">第一次用？新手引导会把「选范围 → 扫描 → 看结果」走一遍。</span>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-act="onboard-restart">重新查看新手引导</button>
+    </div>
     <div class="card" id="setForm">
       <div class="set-subnav" role="tablist">${SET_TABS.map(([k, label]) => `<button class="set-tab${(S.setPane || 'perf') === k ? ' on' : ''}" data-act="set-pane" data-pane="${k}" role="tab" aria-selected="${(S.setPane || 'perf') === k}">${label}</button>`).join('')}</div>
       <section class="set-pane" data-pane="perf"${(S.setPane || 'perf') === 'perf' ? '' : ' hidden'}><div class="set-col">
