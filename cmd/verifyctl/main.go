@@ -27,6 +27,7 @@ func run(args []string, out io.Writer) int {
 
 	urlFlag := fs.String("url", defaultBaseURL, "Verify 实例地址，例如 http://127.0.0.1:18898")
 	tokenFlag := fs.String("token", "", "访问令牌，仅用于 Authorization: Bearer，不回显")
+	passwordFlag := fs.String("password", "", "访问密码，仅用于 Authorization: Basic，不回显；也可用环境变量 VERIFY_PASSWORD")
 	dataDirFlag := fs.String("data-dir", "", "Verify 数据目录，供本地只读辅助使用")
 	formatFlag := fs.String("format", "", "输出格式：table 渲染人类可读表格，json（默认）输出 JSON 信封；非 JSON 响应忽略此项")
 	rawFlag := fs.Bool("raw", false, "输出原始响应体")
@@ -108,6 +109,8 @@ func run(args []string, out io.Writer) int {
 		return 2
 	}
 
+	password := resolvePassword(*passwordFlag)
+
 	// /api/events 是 SSE 无限心跳流，不能用 io.ReadAll（会阻塞到超时再失败、拿不到事件）。
 	// 走流式逐行输出到 stdout，Ctrl+C（SIGINT/SIGTERM）优雅停止并退出 0。
 	if cmd.Path == "/api/events" {
@@ -117,10 +120,11 @@ func run(args []string, out io.Writer) int {
 		if evToken == "" {
 			evToken = token
 		}
-		return runEventStream(out, *urlFlag, evToken)
+		return runEventStream(out, *urlFlag, evToken, password)
 	}
 
 	c := NewClient(*urlFlag, token)
+	c.Password = password
 
 	result, err := cmd.Run(context.Background(), c, params)
 	if err != nil {

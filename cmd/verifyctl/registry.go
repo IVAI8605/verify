@@ -89,7 +89,9 @@ func withLeading(lead Param, rest []Param) []Param {
 // 特例：/api/trash 走 GET 但会因 HealTrashRows 写库，故 SideEffect 标 write；
 // 只读场景请用 trash list（/api/trash/list）。
 var Commands = []Command{
-	{Name: "login", Path: "/api/login", Method: "POST", Params: []Param{{"token", "string", false, ""}}, SideEffect: "none", Confirm: false},
+	{Name: "login", Path: "/api/login", Method: "POST", Params: []Param{{"token", "string", false, ""}, {"password", "string", false, ""}}, SideEffect: "none", Confirm: false},
+	{Name: "password setup", Path: "/api/password/setup", Method: "POST", Params: []Param{{"password", "string", true, ""}, {"confirm", "string", true, ""}}, SideEffect: "write", Confirm: false},
+	{Name: "password change", Path: "/api/password", Method: "POST", Params: []Param{{"current_password", "string", false, ""}, {"new_password", "string", true, ""}, {"confirm", "string", true, ""}}, SideEffect: "write", Confirm: false},
 	{Name: "logout", Path: "/api/logout", Method: "POST", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "status", Path: "/api/status", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},
 	{Name: "tasks", Path: "/api/tasks", Method: "GET", Params: nil, SideEffect: "none", Confirm: false},

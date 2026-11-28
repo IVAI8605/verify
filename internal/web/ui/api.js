@@ -622,7 +622,7 @@ async function exportRuleSearch(){
     });
     if (S.listFilter.q) p.set('q', S.listFilter.q);
     const r = await fetch('/api/rule-search/export?' + p.toString());
-    if (r.status === 401) { showLogin(); return; }
+    if (r.status === 401) { showLogin(S.authMode); return; }
     if (!r.ok) { let m = '导出失败'; try { const j = await r.json(); m = j.error || m; } catch(e){} throw new Error(m); }
     const blob = await r.blob();
     let name = 'verify-rule-search.csv';
@@ -1818,16 +1818,7 @@ async function saveSettings(){
   // v3.8.0：搜索规则取代旧匹配模式；忽略内容模式必须至少一个属性条件。
   const rules = readSettingsRules();
   if (rules.base === 'attributes' && !rules.attrs.length) { toast('忽略内容模式至少要勾选一个比较条件', 'err'); return; }
-  // v3.7.1：令牌、时段、AI 地址在保存前就地校验并二次确认，避免留空/写错被静默吞掉（P-10/P-18）
-  const token = $('sToken').value.trim();
-  const tokenConfirm = $('sTokenConfirm') ? $('sTokenConfirm').value.trim() : '';
-  const tokenClear = $('sTokenClear') && $('sTokenClear').checked;
-  if (tokenClear && token) { toast('设置新令牌与清除令牌不能同时选择', 'err'); return; }
-  if ((token || tokenConfirm) && token !== tokenConfirm) { toast('两次输入的新令牌不一致', 'err'); return; }
-  // v3.17.5（F-18）：令牌是唯一鉴权手段，非空时至少 16 位，避免 123456 这类弱值。
-  if (token && token.length < 16) { toast('新访问令牌至少 16 位', 'err'); return; }
-  if (token && !confirm('确认更换访问令牌？保存后所有旧登录状态都会失效。')) return;
-  if (tokenClear && !confirm('确认清除访问令牌？局域网内能访问本应用的人都将无需登录。')) return;
+  // v4.5.4：访问密码在设置页单独保存（/api/password），不再混在设置表单里。
   const quietHours = $('sQuietHours') ? $('sQuietHours').value.trim() : '';
   if (quietHours && !validQuietHours(quietHours)) { toast('静默时段格式应为 HH:MM-HH:MM，例如 23:00-07:00', 'err'); return; }
   const wakeEnabled = $('sWakeEnabled') && $('sWakeEnabled').checked;
@@ -1934,8 +1925,6 @@ async function saveSettings(){
     op_log_reads: ($('sOpLogReads') ? $('sOpLogReads').checked : false),
     op_log_detail_limit: ($('sOpLogLimit') ? Math.max(0, Math.min(1000, Number($('sOpLogLimit').value || 200))) : 200)
   };
-  // 空值只有用户明确勾选“清除”才提交，避免留空不改被误解成清空令牌
-  if (token || tokenClear) body.access_token = tokenClear ? '' : token;
   // v3.7.2：提交期间禁用保存按钮并只保留一个状态提示，避免连点造成重复提交、
   // 以及「已保存」与失败 toast 同时出现（P-12）。
   const saveBtn = document.querySelector('[data-act="save-settings"]');

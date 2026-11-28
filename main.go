@@ -26,7 +26,6 @@ import (
 	"verify/internal/store"
 	"verify/internal/watch"
 	"verify/internal/web"
-	"verify/internal/webauth"
 )
 
 func defaultDataDir() string {
@@ -184,14 +183,8 @@ func main() {
 	applog.Info("查重助手 Verify %s 启动，数据目录 %s，日志文件 %s", web.Version, *dataDir, applog.Path())
 	applog.Info("哈希算法：%s（%s 加速），预哈希取头尾各 4KB", hashx.DisplayName, hashx.Level())
 
-	// v3.7.2：首次启动（或旧版本升级上来）没有令牌时自动生成一个，
-	// 避免应用以「局域网免登录」状态把永久删除接口暴露给任意设备。
-	// 已有令牌一律不覆盖；生成失败只告警，不影响应用启动。
-	if err := ensureAccessToken(cfgMgr, *dataDir); err != nil {
-		applog.Warn("自动生成访问令牌失败：%v", err)
-	} else if cfgMgr.Get().AccessToken != "" {
-		applog.Info("已启用访问令牌，登录前可在 %s 查看", config.TokenHintPath(*dataDir))
-	}
+	// v4.5.4：Web 登录改为首次启动设置访问密码，不再自动生成访问令牌。
+	// 已有 access_token 的旧配置保留，作为脚本/API 凭据与升级期登录兜底。
 
 	if *addr != "" {
 		c := cfgMgr.Get()
@@ -280,24 +273,6 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)
-}
-
-// ensureAccessToken v3.7.2：首次启动没有访问令牌时生成一个并落盘，
-// 同时写一份登录前可读的提示文件。已有令牌直接返回，绝不覆盖用户设置。
-func ensureAccessToken(cfgMgr *config.Manager, dataDir string) error {
-	if cfgMgr.Get().AccessToken != "" {
-		return nil
-	}
-	token, err := webauth.GenerateToken()
-	if err != nil {
-		return err
-	}
-	cfg := cfgMgr.Get()
-	cfg.AccessToken = token
-	if err := cfgMgr.Replace(cfg); err != nil {
-		return err
-	}
-	return config.WriteTokenHint(dataDir, token)
 }
 
 // startOpLogRetention 按配置定期清理过期操作记录；0 表示永久保留。

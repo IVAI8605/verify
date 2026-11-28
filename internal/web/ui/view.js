@@ -264,9 +264,9 @@ function renderTypeChart(state){
         : `<li class="tc-more"><button class="btn ghost" data-act="typechart-more">展开其余 ${restCount} 类（${restFiles.toLocaleString()} 个文件）</button></li>`)
     : '';
   return `<section class="section type-chart" aria-label="文件类型分布">
-    <h2 class="section-title">文件类型分布</h2>
+    <h2 class="section-title">文件类型分布<span class="hint">${state.running ? '本次扫描进行中' : (state.types_at ? '上次扫描 ' + fmtT(Number(state.types_at) * 1e9) : '按现有索引')}</span></h2>
     <div class="tc-wrap">
-      <svg class="tc-donut" viewBox="0 0 120 120" role="img" aria-label="本次扫描文件类型占比">
+      <svg class="tc-donut" viewBox="0 0 120 120" role="img" aria-label="文件类型占比">
         ${segs}
         <text x="60" y="57" text-anchor="middle" class="tc-total">${fmtB(totalBytes || totalFiles)}</text>
         <text x="60" y="72" text-anchor="middle" class="tc-sub">${useBytes ? '按占用' : '按文件数'}</text>
@@ -415,7 +415,7 @@ function renderOverview(st){
       </div>
     </section>
     ${ruleNote}
-    ${(st.auth && st.auth.required && !tokenNoticeSeen()) ? `<div class="notice notice-dismiss"><span>已启用访问令牌：局域网内打开页面需要先输入令牌。首次启动自动生成的令牌保存在数据目录的 <span class="mono">access-token.txt</span>；登录后可在「设置 → 访问令牌」查看、更换或清除。</span><button class="btn ghost" data-act="token-notice-close">知道了</button></div>` : ''}
+    ${(st.auth && st.auth.required && !tokenNoticeSeen()) ? `<div class="notice notice-dismiss"><span>${st.auth.mode === 'legacy_token' ? '当前仍在使用旧版访问令牌。建议到「设置 → 访问密码」设置密码，之后登录改用密码；旧令牌可继续留给脚本调用接口。' : '已启用访问密码：局域网内打开页面需要先输入密码。可在「设置 → 访问密码」修改；密码只保存加盐哈希，忘记时可停止应用后从 config.json 删除 password_hash 再重启。'}</span><button class="btn ghost" data-act="token-notice-close">知道了</button></div>` : ''}
     ${(state.running || state.finished_at > 0) ? `<div id="scanSummary">${scanSummaryHtml(state)}</div>` : ''}
     ${st.cleanup ? `<div class="notice">
       上次自动清理：${fmtT(Number(st.cleanup.last_run) * 1e9)} · ${esc(st.cleanup.name || '')} · ${esc(st.cleanup.last_result || '')}${st.cleanup.last_error ? '（错误：' + esc(st.cleanup.last_error) + '）' : ''}

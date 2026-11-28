@@ -1,7 +1,7 @@
 appname=verify
-version=4.5.3
+version=4.5.4
 display_name=查重助手
-desc=飞牛 NAS 重复文件清理与实时查重助手：按文件内容精确查重、同名文件分组、视频相似检测、相同片头检测（1–300 秒可调），支持隔离区恢复与 Duplicate Cleaner 兼容 CSV 导出。视频分析复用系统 FFmpeg，可选用 Intel 核显 QSV 硬解加速。仅以专用 package 用户运行，不请求 root；只访问用户在飞牛「系统设置 → 应用」里显式授权的目录；硬件解码需 render 组，失败自动回退软解。完整说明见仓库 docs/权限说明.md 与应用内「操作手册 → 权限与隐私」。
+desc=飞牛 NAS 重复文件清理与实时查重助手：按文件内容精确查重、同名文件分组、视频相似检测、相同片头检测（1–300 秒可调），支持隔离区恢复与 Duplicate Cleaner 兼容 CSV 导出。视频分析复用系统 FFmpeg，可选用 Intel 核显 QSV 硬解加速。仅以专用 package 用户运行，不请求 root；只访问用户在飞牛「系统设置 → 应用」里显式授权的目录；硬件解码需 render 组，失败自动回退软解；Web 端首次启动设置访问密码，密码只存加盐哈希。完整说明见仓库 docs/权限说明.md 与应用内「操作手册 → 权限与隐私」。
 platform=x86
 source=thirdparty
 maintainer=Verify
@@ -12,6 +12,6 @@ service_port=${wizard_port}
 checkport=true
 ctl_stop=true
 disable_authorization_path=false
-changelog=新增「权限与隐私」说明：应用以专用 package 用户运行，不请求 root；仅访问用户授权目录；硬件解码只申请 render 组，失败自动回退软解。修复新手引导遮挡页面、推荐组合与高级模式规则错位、侧栏导航高亮；文件类型图例长尾可展开。安装/升级仍可指定 Web 端口（默认 18898）。
+changelog=首次启动改为设置访问密码（至少 8 位），密码只保存加盐哈希，不再自动生成令牌；旧版令牌升级后仍可登录一次，之后可在设置页切换为密码，旧令牌保留作可选脚本凭据。修复重启或升级后概览页「文件类型分布」图表消失的问题：类型分布落盘保存，重启后仍显示上次扫描结果并标注时间；首次升级会先从现有索引汇总一次并标注「按现有索引」，装完即可看到图表，重扫自动刷新。另含权限与隐私说明：应用以专用 package 用户运行，不请求 root，仅访问用户授权目录，硬件解码只申请 render 组且失败回退软解。
 desktop_uidir=ui
 desktop_applaunchname=verify.Application

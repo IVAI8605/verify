@@ -53,6 +53,27 @@ func TestDoBearerAndEnvelope(t *testing.T) {
 	}
 }
 
+// TestDoPasswordBasic 验证密码模式走 HTTP Basic（用户名为空），且不发 Bearer。
+func TestDoPasswordBasic(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "" || pass != "pw-123" {
+			t.Errorf("Basic 鉴权错误：user=%q pass=%q ok=%v", user, pass, ok)
+		}
+		if got := r.Header.Get("Authorization"); strings.HasPrefix(got, "Bearer ") {
+			t.Error("不应同时发送 Bearer")
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	c.Password = "pw-123"
+	if _, status, err := c.Do(context.Background(), Command{Path: "/api/status", Method: "GET"}, nil); err != nil || status != http.StatusOK {
+		t.Fatalf("Do 失败：status=%d err=%v", status, err)
+	}
+}
+
 // Test409MapsToExit5 验证 409 按控制器裁定映射到退出码 5，且不产生退出码 7。
 func Test409MapsToExit5(t *testing.T) {
 	if got := exitCodeForHTTP(409); got != 5 {

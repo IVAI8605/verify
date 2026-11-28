@@ -701,17 +701,13 @@ function renderSettings(){
         <div class="field"><label>缩略图存放位置</label><div class="inputrow"><input id="sCacheDir" placeholder="留空用数据目录下的 cache" value="${esc(c.cache_dir||'')}"><button class="btn" data-act="pick-cache-dir">选择</button></div><span class="help">现在存在：${esc(paths.cache_dir||'未设置')}。换位置后旧缩略图不会自动搬过去，会重新生成</span></div>
         <div class="field"><label>缩略图可用内存（MB）</label><input id="sMemBudget" type="number" min="0" max="65536" step="64" value="${c.mem_budget_mb||0}"><span class="help">0 表示按机器内存自动算（32G 的机器给 4096）。只影响缩略图这类内存缓存，超了自动淘汰最旧的，不会把内存撑爆</span></div>
         <div class="field"><label>缩略图占用磁盘上限（MB）</label><input id="sThumbMax" type="number" min="0" max="4096" step="64" value="${c.thumb_cache_max_mb!=null?c.thumb_cache_max_mb:256}"><span class="help">0 表示不限制。超过上限会删最旧的缩略图，需要时再生成</span></div>
-        <div class="field"><label>访问令牌</label>
-          <span class="help">当前状态：<b>${S.status && S.status.auth && S.status.auth.required ? '已设置，打开页面要先登录' : '未设置，局域网免登录'}</b>。</span>
-          <div class="inputrow" style="margin-top:6px">
-            <input id="sTokenView" readonly placeholder="点「查看」显示当前令牌">
-            <button class="btn" data-act="token-view"${S.status && S.status.auth && S.status.auth.required ? '' : ' disabled'}>查看</button>
-          </div>
-          <span class="help">首次启动会自动生成令牌，登录前可在数据目录的 access-token.txt 查看；这里显示的是当前生效值，请勿随意分享。</span>
-          <input id="sToken" type="password" autocomplete="new-password" placeholder="输入新令牌（不修改请留空）" style="margin-top:6px">
-          <input id="sTokenConfirm" type="password" autocomplete="new-password" placeholder="再次输入新令牌" style="margin-top:6px">
-          <label class="checkline" style="margin-top:6px"><input type="checkbox" id="sTokenClear"${S.status && S.status.auth && S.status.auth.required ? '' : ' disabled'}> 清除现有令牌，改为免登录</label>
-          <span class="help">设置或清除都要在保存时二次确认；改了之后旧的登录状态会失效，要用新令牌重新登录。</span>
+        <div class="field"><label>访问密码</label>
+          <span class="help">当前状态：<b>${S.status && S.status.auth && S.status.auth.mode === 'password' ? '已设置，打开页面要先输入密码' : (S.status && S.status.auth && S.status.auth.mode === 'legacy_token' ? '仍在用旧版访问令牌，建议现在设置密码' : '尚未设置')}</b>。</span>
+          ${S.status && S.status.auth && S.status.auth.mode === 'password' ? '<input id="sPwdCurrent" type="password" autocomplete="current-password" placeholder="当前访问密码" style="margin-top:6px">' : ''}
+          <input id="sPwdNew" type="password" autocomplete="new-password" placeholder="新访问密码（至少 8 位）" style="margin-top:6px">
+          <input id="sPwdConfirm" type="password" autocomplete="new-password" placeholder="再次输入新访问密码" style="margin-top:6px">
+          <div class="asrow" style="margin-top:6px"><button class="btn primary" data-act="password-save">保存访问密码</button><span class="hint" id="pwdHint"></span></div>
+          <span class="help">密码保存为加盐哈希（PBKDF2-SHA256），不会写进日志或配置文件明文；修改后所有设备都要用新密码重新登录。忘记密码可停止应用，从 config.json 删除 password_hash 后重启重新设置。</span>
         </div>
       </div></section>
       <div class="form-actions" id="saveSettingsRow"${['perf','schedule','basis','paths'].includes(S.setPane || 'perf') ? '' : ' hidden'}><button class="btn primary" data-act="save-settings">保存设置</button><span class="hint" id="saveHint"></span></div>
@@ -1702,20 +1698,35 @@ function healthReasonBar(){
 // v3.10.2：健康页排序交给数据层，点击列头时重绘整表而不是排序 DOM。
 TABLE_SORT_HOOKS.health = () => { renderHealth(); };
 
-// showCurrentToken v3.7.2：向服务端取当前生效令牌并回填只读输入框。
-// 接口只对已登录会话返回，避免登录前就能从界面拿到；输入框用 text 便于复制。
-async function showCurrentToken(){
-  // v3.27 类型层：显式标注为 HTMLInputElement，
-  // 否则 $() 的返回值是 HTMLElement，el.select() / el.value 会被 tsc 判为不存在。
-  const el = /** @type {HTMLInputElement|null} */ ($('sTokenView'));
-  if (!el) return;
-  if (!S.status || !S.status.auth || !S.status.auth.required) { toast('当前未启用访问令牌', 'warn'); return; }
+// savePassword v4.5.4：设置页单独保存访问密码，不混进设置表单。
+async function savePassword(){
+  const np = $('sPwdNew') ? $('sPwdNew').value : '';
+  const cf = $('sPwdConfirm') ? $('sPwdConfirm').value : '';
+  const curEl = $('sPwdCurrent');
+  const hint = $('pwdHint');
+  if (!np.trim()) { toast('请填写新访问密码', 'err'); return; }
+  if (np.length < 8) { toast('访问密码至少 8 个字符', 'err'); return; }
+  if (np !== cf) { toast('两次输入的新密码不一致', 'err'); return; }
+  const mode = S.status && S.status.auth ? S.status.auth.mode : 'password';
+  if (mode === 'password' && (!curEl || !curEl.value)) { toast('请先填写当前访问密码', 'err'); return; }
+  if (!confirm('确认保存访问密码？保存后所有设备都要用新密码重新登录。')) return;
+  if (hint) { hint.textContent = '保存中…'; hint.style.color = ''; }
   try {
-    const r = /** @type {TokenResp} */ (await api('/api/auth/token'));
-    el.value = r.token || '';
-    el.select();
-  } catch(e) { toast(e.message, 'err'); }
+    await postJSON('/api/password', {
+      current_password: curEl ? curEl.value : '',
+      new_password: np,
+      confirm: cf,
+    });
+    if (hint) hint.textContent = '已更新';
+    ['sPwdCurrent','sPwdNew','sPwdConfirm'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+    toast('访问密码已更新', 'ok');
+    await refreshStatus();
+  } catch (e) {
+    if (hint) { hint.textContent = '保存失败'; hint.style.color = 'var(--color-error)'; }
+    toast(e.message, 'err');
+  }
 }
+
 
 // validQuietHours 与后端 ParseQuietHours 同规则：HH:MM-HH:MM，允许留空与跨零点。
 function validQuietHours(v){

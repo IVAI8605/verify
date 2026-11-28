@@ -171,8 +171,12 @@ type Config struct {
 	AudioThreshold float64 `json:"audio_threshold"`
 	// 缩略图 dHash 最大汉明距离
 	PHashHamming int `json:"phash_hamming"`
-	// 访问令牌，为空则不需要登录；仅用于本地 config.json 落盘，不会写入日志或响应体
+	// 访问令牌，仅作为可选的脚本/API 凭据；Web 登录使用 PasswordHash。
+	// 仅用于本地 config.json 落盘，不会写入日志或响应体。
 	AccessToken string `json:"access_token"`
+	// PasswordHash 是访问密码的加盐哈希（v4.5.4），格式由 internal/webauth 定义。
+	// 为空表示尚未设置访问密码；绝不落明文密码。
+	PasswordHash string `json:"password_hash"`
 	// ffmpeg / ffprobe 路径，留空自动探测
 	FFmpeg  string `json:"ffmpeg"`
 	FFprobe string `json:"ffprobe"`
@@ -261,6 +265,7 @@ func Default(dataDir string) *Config {
 		AudioThreshold:        0.82,
 		PHashHamming:          10,
 		AccessToken:           "",
+		PasswordHash:          "",
 		FullRescanHours:       24,
 		PollMinutes:           10,
 		HashWorkers:           4,
@@ -479,8 +484,6 @@ func (m *Manager) Replace(c *Config) error {
 	m.mu.Lock()
 	m.cfg = c
 	m.mu.Unlock()
-	// v3.7.2：令牌变化时同步登录前提示文件，避免它一直停留在旧令牌上误导用户。
-	// 配置此刻已经落盘，提示文件只是辅助渠道，写失败不能让上层误判为「保存失败」。
-	_ = WriteTokenHint(filepath.Dir(path), c.AccessToken)
+	// v4.5.4：Web 登录改用访问密码，不再向数据目录写访问令牌提示文件。
 	return nil
 }

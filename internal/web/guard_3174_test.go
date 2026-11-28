@@ -53,7 +53,13 @@ func TestCheckToolPath(t *testing.T) {
 		t.Fatalf("可执行文件应合法，实际 %q", msg)
 	}
 	if msg := checkToolPath("FFmpeg", noExec, nil); msg == "" {
-		t.Fatal("不可执行文件应被拒")
+		// 部分网络文件系统（SMB/CIFS）会忽略 chmod，0644 也带执行位；
+		// 这类环境无法验证“不可执行”，但不代表校验逻辑失效。
+		if fi, err := os.Stat(noExec); err == nil && fi.Mode().Perm()&0o111 != 0 {
+			t.Log("当前文件系统不保留可执行位，跳过“不可执行文件应被拒”断言")
+		} else {
+			t.Fatal("不可执行文件应被拒")
+		}
 	}
 	if msg := checkToolPath("FFmpeg", filepath.Join(dir, "missing"), nil); msg == "" {
 		t.Fatal("不存在的路径应被拒")

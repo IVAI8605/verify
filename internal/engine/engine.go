@@ -48,8 +48,10 @@ type State struct {
 	Skipped      int64  `json:"skipped"`
 	SkippedDirs  int64  `json:"skipped_dirs"`
 	SkipReason   string `json:"skip_reason"`
-	// v2.2.0：本次扫描范围的文件类型分布（按扩展名聚合，内存态）。
-	Types []TypeStat `json:"types"`
+	// v2.2.0：本次扫描范围的文件类型分布（按扩展名聚合）。
+	// v4.5.4：枚举完成后会落盘，重启后 Types 仍保留上次结果，TypesAt 是对应时间。
+	Types   []TypeStat `json:"types"`
+	TypesAt int64      `json:"types_at"`
 }
 
 type Engine struct {
@@ -176,6 +178,8 @@ func New(st *store.Store, cfg *config.Manager, bus *Bus, appDest string) *Engine
 	}
 	// v3.3.0：启动时读取偏好反哺开关并重算权重（记录很小，同步读完再启动调度器）。
 	e.LoadRetainProfile(e.baseCtx)
+	// v4.5.4：恢复上次扫描落盘的文件类型分布，避免升级/重启后概览饼图消失。
+	e.loadCachedTypeStats()
 	go e.videoWorker()
 	// v3.10.10（第五轮 P1-1）：快照以前只写不读，崩溃留下的未完成 run 没人识别。
 	// v3.10.12（P1-03）：先按 pending 意图行校正崩溃残留的改名，再统一报告其他未完成项。
@@ -1104,6 +1108,8 @@ func (e *Engine) runScan(ctx context.Context, mode ScanMode) {
 		s.Types = e.stats.typeStats()
 	})
 	e.publishProgress(true)
+	// v4.5.4：枚举完成即落盘类型分布，重启后概览图仍有数据（按「上次扫描」标注）。
+	e.persistTypeStats()
 	// v3.10.3：枚举也纳入分阶段耗时，后续比较「枚举 vs 哈希 vs 视频」才有依据。
 	enumElapsed := time.Since(started)
 	enumBytes := e.stats.scannedBytes.Load()

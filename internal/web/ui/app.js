@@ -5,6 +5,8 @@
 const S = {
   tab: 'overview',
   status: null,
+  // v4.5.4：登录方式由后端 auth.mode 决定：setup / password / legacy_token
+  authMode: '',
   // v3.7.0 操作记录页状态（筛选条件与分页）
   opLog: { page:1, pageSize:50, items:[], total:0, action:'', result:'', keyword:'' },
   // v3.10.13：操作记录页的第二视图（写操作快照）；接口未就位时 error 会写进这里
@@ -614,7 +616,7 @@ document.addEventListener('click', async (ev) => {
   if (act === 'pick-log-dir') { openDirPicker('log', $('sLogDir') ? $('sLogDir').value.trim() : ''); return; }
   if (act === 'pick-cache-dir') { openDirPicker('cache', $('sCacheDir') ? $('sCacheDir').value.trim() : ''); return; }
   // v3.7.2：设置页查看当前访问令牌（仅已登录会话可用）
-  if (act === 'token-view') { await showCurrentToken(); return; }
+  if (act === 'password-save') { await savePassword(); return; }
   // v3.8.0：合并结果页的类型筛选、重新搜索与取消
   if (act === 'result-type') {
     S.resultType = el.dataset.type || 'all';
@@ -1553,17 +1555,33 @@ $('pauseBtn').addEventListener('click', async () => {
   } catch(e) { toast(e.message, 'err'); }
 });
 $('loginBtn').addEventListener('click', async () => {
-  const btn = $('loginBtn'), token = $('tokenInput').value.trim();
-  // v3.9.6 修 G-10：空 token 前置拦截 + 提交期间 disabled + 文案反馈
-  if (!token) { toast('请先填写访问令牌', 'err'); return; }
-  btn.disabled = true; btn.textContent = '登录中…';
+  const btn = $('loginBtn'), input = $('tokenInput');
+  const mode = S.authMode || 'password';
+  const cred = input.value;
+  if (!cred.trim()) { toast(mode === 'setup' ? '请先设置访问密码' : (mode === 'legacy_token' ? '请先填写访问令牌' : '请先填写访问密码'), 'err'); return; }
+  const restore = () => { btn.disabled = false; btn.textContent = mode === 'setup' ? '设置并进入' : '进入'; };
+  btn.disabled = true; btn.textContent = mode === 'setup' ? '设置中…' : '登录中…';
   try {
-    await postJSON('/api/login', { token });
+    if (mode === 'setup') {
+      if (cred.length < 8) throw new Error('访问密码至少 8 个字符');
+      const confirm = $('loginConfirm').value;
+      if (cred !== confirm) throw new Error('两次输入的访问密码不一致');
+      await postJSON('/api/password/setup', { password: cred, confirm });
+      S.authMode = 'password';
+    } else if (mode === 'legacy_token') {
+      await postJSON('/api/login', { token: cred.trim() });
+    } else {
+      await postJSON('/api/login', { password: cred });
+    }
     hideLogin(); await boot();
-  } catch(e) { toast(e.message, 'err'); }
-  finally { btn.disabled = false; btn.textContent = '登录'; }
+  } catch(e) {
+    toast(e.message, 'err');
+    if (S.authMode === 'password' && String(e.message).includes('尚未设置')) { S.authMode = 'setup'; showLogin('setup'); }
+  }
+  finally { restore(); }
 });
 $('tokenInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click(); });
+$('loginConfirm').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click(); });
 
 // v4.5.0：导航统一事件委托（侧栏、更多功能、底部导航共用一套 data-tab）
 document.addEventListener('click', (ev) => {
@@ -1725,7 +1743,7 @@ async function boot(){
     const h = (location.hash || '').slice(1);
     if (h && !S.tab && ['overview','help','results','trash','import','search','rename','settings','oplog','health','video','intro','photo','audio','folder','fuzzy','semantic','samevideo','big','transcode'].includes(h)) S.tab = h;
     const st = await refreshStatus();
-    if (st.auth && st.auth.required && !st.auth.ok) { showLogin(); return; }
+    if (st.auth && st.auth.required && !st.auth.ok) { showLogin(S.authMode); return; }
     renderProgress(st.state);
     // 2026-11-08：启动时探一次崩溃残留的改名批次，给左侧导航挂角标；
     // 空数组时无任何可见变化，失败也不弹 toast（不能因为探测失败挡住首屏）
@@ -1735,7 +1753,7 @@ async function boot(){
     // v4.5.0：首次使用引导（设置里可重新打开）
     if (typeof maybeShowOnboarding === 'function') maybeShowOnboarding();
   } catch(e) {
-    if (String(e.message).includes('令牌')) { showLogin(); return; }
+    if (String(e.message).includes('密码') || String(e.message).includes('令牌')) { showLogin(S.authMode); return; }
     toast(e.message, 'err');
   }
 }

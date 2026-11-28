@@ -21,11 +21,13 @@ import (
 const multipartFileParam = "file"
 
 // Client 是 verifyctl 的轻量 HTTP 客户端。
-// Token 只进 Authorization: Bearer，绝不写进 URL、日志或错误文案。
+// Token 只进 Authorization: Bearer，Password 只进 Authorization: Basic，
+// 两者都不写进 URL、日志或错误文案。
 type Client struct {
-	BaseURL string
-	Token   string
-	HTTP    *http.Client
+	BaseURL  string
+	Token    string
+	Password string
+	HTTP     *http.Client
 }
 
 // NewClient 构造客户端；baseURL 末尾斜杠会被去掉，避免拼出双斜杠。
@@ -144,7 +146,9 @@ func (c *Client) Do(ctx context.Context, cmd Command, params map[string]string) 
 	if err != nil {
 		return nil, 0, fmt.Errorf("构造请求失败（%v）", err)
 	}
-	if c.Token != "" {
+	if c.Password != "" {
+		req.SetBasicAuth("", c.Password)
+	} else if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
 	// /api/auth/token 强制要求同源页面标记（SEC-3），CLI 与前端一致地带上；

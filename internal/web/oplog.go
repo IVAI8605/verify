@@ -251,8 +251,11 @@ func requestDetails(r *http.Request) ([]oplog.Detail, int) {
 
 // opSensitiveFields 的值绝不写进操作记录，只记「已修改」。
 var opSensitiveFields = map[string]bool{
-	"access_token": true,
-	"ai_endpoint":  true,
+	"access_token":     true,
+	"password_hash":    true,
+	"current_password": true,
+	"new_password":     true,
+	"ai_endpoint":      true,
 }
 
 func configToMap(c *config.Config) map[string]any {

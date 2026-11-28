@@ -146,6 +146,12 @@ func TestListEntryViewNoVolumeRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.Chmod(lockedSC, 0o750) }()
+	// 部分网络文件系统（SMB/CIFS）会忽略 chmod，000 目录依然可读；
+	// 这类环境无法验证“未授权目录收起”，跳过本段而不是误报产品缺陷。
+	if _, err := os.ReadDir(lockedSC); err == nil {
+		t.Log("当前文件系统不保留目录权限，跳过未授权目录断言")
+		return
+	}
 	l2, err := List([]string{root}, []string{shortcut, lockedSC}, "")
 	if err != nil {
 		t.Fatal(err)

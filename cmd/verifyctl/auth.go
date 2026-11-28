@@ -41,6 +41,15 @@ func resolveToken(flagToken string, dataDir string) (string, error) {
 	return cfg.AccessToken, nil
 }
 
+// resolvePassword 按优先级读取访问密码：命令行 --password > 环境变量 VERIFY_PASSWORD。
+// 仅供 HTTP Basic 使用，不读取配置文件里的哈希（哈希无法还原为密码）。
+func resolvePassword(flagPassword string) string {
+	if flagPassword != "" {
+		return flagPassword
+	}
+	return os.Getenv("VERIFY_PASSWORD")
+}
+
 // AuthToken 通过 HTTP 取服务端的当前访问令牌。
 // 服务端要求 X-Requested-With: verify 标记，否则拒绝；令牌只作为返回值，
 // 不进查询串、日志或错误文案。
@@ -49,7 +58,9 @@ func (c *Client) AuthToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("构造令牌请求失败（%v）", err)
 	}
-	if c.Token != "" {
+	if c.Password != "" {
+		req.SetBasicAuth("", c.Password)
+	} else if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
 	req.Header.Set("X-Requested-With", "verify")

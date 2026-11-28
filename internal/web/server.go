@@ -24,6 +24,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"verify/internal/apperr"
 	"verify/internal/applog"
 	"verify/internal/config"
 	"verify/internal/engine"
@@ -44,7 +45,7 @@ import (
 //go:embed ui
 var uiFS embed.FS
 
-const Version = "4.5.3"
+const Version = "4.5.4"
 
 type Server struct {
 	e       *engine.Engine
@@ -65,6 +66,9 @@ type Server struct {
 	// 防止局域网内对访问令牌的无限暴力尝试。成功登录即清零。
 	loginMu    sync.Mutex
 	loginFails map[string]*loginFail
+
+	// passwdMu 串行化首次设置/修改访问密码，避免两个并发请求都通过「尚未设置」检查。
+	passwdMu sync.Mutex
 
 	// searchIndex 是内存文件名索引（v2.10.0），启动后后台构建，扫描后按需自动重建。
 	searchIndex *search.Index
@@ -124,6 +128,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	mux.HandleFunc("/api/login", s.handleLogin)
+	mux.HandleFunc("/api/password/setup", s.handlePasswordSetup)
+	mux.HandleFunc("/api/password", s.auth(s.handlePasswordChange))
 	mux.HandleFunc("/api/logout", s.auth(s.handleLogout))
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/tasks", s.auth(s.handleTasks))
@@ -440,17 +446,37 @@ func sameSiteRequest(r *http.Request) bool {
 	return strings.EqualFold(u.Host, r.Host)
 }
 
+const (
+	authModeSetup       = "setup"        // 首次使用：还没有访问密码
+	authModePassword    = "password"     // 已设置访问密码
+	authModeLegacyToken = "legacy_token" // 旧版只配置了 access_token
+)
+
+// authMode 告诉登录页该显示「设置密码」「输入密码」还是「旧版令牌」。
+func authMode(cfg *config.Config) string {
+	if cfg.PasswordHash != "" {
+		return authModePassword
+	}
+	if cfg.AccessToken != "" {
+		return authModeLegacyToken
+	}
+	return authModeSetup
+}
+
 // cookieAuthed 只判断当前请求是否靠 Cookie 通过鉴权（令牌在 URL 或头里的请求不受 CSRF 影响）。
 func (s *Server) cookieAuthed(r *http.Request) bool {
 	c, err := r.Cookie(cookieName)
 	if err != nil {
 		return false
 	}
-	token := s.cfg.Get().AccessToken
-	if token == "" {
+	cfg := s.cfg.Get()
+	if cfg.PasswordHash != "" {
+		return webauth.TokenEqual(c.Value, webauth.PasswordCookieValue(cfg.PasswordHash))
+	}
+	if cfg.AccessToken == "" {
 		return false
 	}
-	return webauth.TokenEqual(c.Value, webauth.CookieValue(token))
+	return webauth.TokenEqual(c.Value, webauth.CookieValue(cfg.AccessToken))
 }
 
 // csrfGuard 是全站写请求的 CSRF 防线（v3.10.6 SEC-1）。
@@ -483,15 +509,50 @@ func (s *Server) csrfGuard(next http.Handler) http.Handler {
 const cookieName = "verify_token"
 
 func (s *Server) authed(r *http.Request) bool {
-	token := s.cfg.Get().AccessToken
+	cfg := s.cfg.Get()
+	if cfg.PasswordHash != "" {
+		if c, err := r.Cookie(cookieName); err == nil && webauth.TokenEqual(c.Value, webauth.PasswordCookieValue(cfg.PasswordHash)) {
+			return true
+		}
+		// 命令行 / 脚本可以用 HTTP Basic 携带访问密码（用户名留空），
+		// 这样没有旧令牌的全新安装也能用 verifyctl；失败按 IP 计入登录限速。
+		if user, pass, ok := r.BasicAuth(); ok && user == "" && pass != "" {
+			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+			if ip == "" {
+				ip = r.RemoteAddr
+			}
+			if s.loginThrottleCheck(ip) {
+				return false
+			}
+			if webauth.VerifyPassword(cfg.PasswordHash, pass) {
+				s.loginThrottleReset(ip)
+				return true
+			}
+			s.loginThrottleFail(ip)
+			return false
+		}
+		// 可选的脚本/API 令牌仍可用于 Bearer 与 /api/events 查询参数；Web 登录只认密码。
+		if cfg.AccessToken != "" {
+			return s.tokenAuthed(r, cfg.AccessToken)
+		}
+		return false
+	}
+	token := cfg.AccessToken
 	if token == "" {
-		return true
+		// v4.5.4：没有任何凭据时处于「首次设置密码」状态，业务接口一律拒绝，
+		// 不能像旧版那样把空令牌当成免登录。
+		return false
 	}
 	// Cookie 里存的是令牌派生值，不是令牌本身。
 	want := webauth.CookieValue(token)
 	if c, err := r.Cookie(cookieName); err == nil && webauth.TokenEqual(c.Value, want) {
 		return true
 	}
+	return s.tokenAuthed(r, token)
+}
+
+// tokenAuthed 校验 Bearer 头与 SSE 的 ?token= 查询参数（仅 /api/events）。
+func (s *Server) tokenAuthed(r *http.Request, token string) bool {
 	// SSE 允许通过查询参数携带，EventSource 无法设置请求头。
 	// v3.10.8（SEC-6）：只对 /api/events 放行，避免令牌出现在其它接口的 URL/日志/Referer 里。
 	if q := r.URL.Query().Get("token"); q != "" && r.URL.Path == "/api/events" && webauth.TokenEqual(q, token) {
@@ -506,8 +567,8 @@ func (s *Server) authed(r *http.Request) bool {
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.authed(r) {
-			s.recordDenied(r, "无有效访问令牌")
-			writeJSON(w, http.StatusUnauthorized, authErrorResponse{Error: "需要访问令牌", Auth: true})
+			s.recordDenied(r, "无有效访问凭据")
+			writeJSON(w, http.StatusUnauthorized, authErrorResponse{Error: "需要访问密码", Auth: true})
 			return
 		}
 		if !guardReplacementChars(w, r) {
@@ -653,35 +714,174 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Token string `json:"token"`
+		Password string `json:"password"`
+		Token    string `json:"token"`
 	}
-	// v3.10.8（SEC-5）：登录体只需一个令牌字段，限制大小防止超大请求体占内存。
+	// v3.10.8（SEC-5）：登录体只需一个凭据字段，限制大小防止超大请求体占内存。
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
 		return
 	}
-	token := s.cfg.Get().AccessToken
-	if token == "" || webauth.TokenEqual(body.Token, token) {
-		s.loginThrottleReset(ip)
-		if token != "" {
-			http.SetCookie(w, &http.Cookie{ // #nosec G124 -- 局域网内以 HTTP 提供服务，设置 Secure 会导致浏览器直接丢弃 Cookie；已启用 HttpOnly 与 SameSite
-				Name: cookieName, Value: webauth.CookieValue(token), Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
-				MaxAge: 30 * 24 * 3600,
-			})
-			e := oplog.New("login_ok")
-			e.Summary = "登录成功"
-			s.recordOp(r, e)
+	cfg := s.cfg.Get()
+	switch authMode(cfg) {
+	case authModePassword:
+		if body.Password == "" {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请输入访问密码"})
+			return
 		}
-		writeJSON(w, 200, okResponse{OK: true})
+		if webauth.VerifyPassword(cfg.PasswordHash, body.Password) {
+			s.loginThrottleReset(ip)
+			setPasswordCookie(w, cfg.PasswordHash)
+			e := oplog.New("login_ok")
+			e.Summary = "登录成功（访问密码）"
+			s.recordOp(r, e)
+			writeJSON(w, 200, okResponse{OK: true})
+			return
+		}
+		s.loginThrottleFail(ip)
+		fail := oplog.New("login_fail")
+		fail.Result = oplog.ResultFail
+		fail.Summary = "访问密码不正确"
+		s.recordOp(r, fail)
+		writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "访问密码不正确"})
+		return
+	case authModeLegacyToken:
+		if body.Token != "" && webauth.TokenEqual(body.Token, cfg.AccessToken) {
+			s.loginThrottleReset(ip)
+			setTokenCookie(w, cfg.AccessToken)
+			e := oplog.New("login_ok")
+			e.Summary = "登录成功（旧版访问令牌）"
+			s.recordOp(r, e)
+			writeJSON(w, 200, okResponse{OK: true})
+			return
+		}
+		s.loginThrottleFail(ip)
+		fail := oplog.New("login_fail")
+		fail.Result = oplog.ResultFail
+		fail.Summary = "访问令牌不正确"
+		s.recordOp(r, fail)
+		writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "访问令牌不正确"})
+		return
+	default:
+		// 首次使用：必须先设置访问密码，不能靠空凭据进入。
+		writeJSON(w, http.StatusConflict, errorResponse{Error: "尚未设置访问密码，请先在登录页设置"})
+	}
+}
+
+// setPasswordCookie 与 setTokenCookie 统一 Cookie 属性，避免两套登录方式行为漂移。
+func setPasswordCookie(w http.ResponseWriter, hash string) {
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- 局域网内以 HTTP 提供服务，设置 Secure 会导致浏览器直接丢弃 Cookie；已启用 HttpOnly 与 SameSite
+		Name: cookieName, Value: webauth.PasswordCookieValue(hash), Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		MaxAge: 30 * 24 * 3600,
+	})
+}
+
+func setTokenCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- 局域网内以 HTTP 提供服务，Secure 会导致浏览器丢弃 Cookie；已启用 HttpOnly 与 SameSite
+		Name: cookieName, Value: webauth.CookieValue(token), Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		MaxAge: 30 * 24 * 3600,
+	})
+}
+
+// handlePasswordSetup 是首次使用的唯一入口：还没有任何凭据时设置访问密码。
+// 设置成功后立即下发登录 Cookie，用户无需再登录一次。
+func (s *Server) handlePasswordSetup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
 		return
 	}
-	s.loginThrottleFail(ip)
-	fail := oplog.New("login_fail")
-	fail.Result = oplog.ResultFail
-	fail.Summary = "访问令牌不正确"
-	s.recordOp(r, fail)
-	writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "访问令牌不正确"})
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	var body struct {
+		Password string `json:"password"`
+		Confirm  string `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
+		return
+	}
+	if body.Password != body.Confirm {
+		writeJSON(w, 400, errorResponse{Error: "两次输入的访问密码不一致"})
+		return
+	}
+	if msg := webauth.PasswordProblem(body.Password); msg != "" {
+		writeJSON(w, 400, errorResponse{Error: msg})
+		return
+	}
+	s.passwdMu.Lock()
+	defer s.passwdMu.Unlock()
+	cfg := s.cfg.Get()
+	if cfg.PasswordHash != "" {
+		writeJSON(w, http.StatusConflict, errorResponse{Error: "访问密码已设置，请直接登录"})
+		return
+	}
+	if cfg.AccessToken != "" {
+		writeJSON(w, http.StatusConflict, errorResponse{Error: "检测到旧版访问令牌，请先用令牌登录，再到设置页设置访问密码"})
+		return
+	}
+	hash, err := webauth.HashPassword(body.Password)
+	if err != nil {
+		writeJSON(w, 500, errorResponse{Error: apperr.Format(err)})
+		return
+	}
+	cfg.PasswordHash = hash
+	if err := s.cfg.Replace(cfg); err != nil {
+		writeJSON(w, 500, errorResponse{Error: apperr.Format(err)})
+		return
+	}
+	setPasswordCookie(w, hash)
+	e := oplog.New("password_setup")
+	e.Summary = "首次设置访问密码"
+	s.recordOp(r, e)
+	writeJSON(w, 200, okResponse{OK: true})
+}
+
+// handlePasswordChange 供已登录用户修改访问密码；旧版令牌登录也可借此切换为密码登录。
+func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "请求方法不支持"})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	var body struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+		Confirm         string `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, errorResponse{Error: friendlyDecodeError(err)})
+		return
+	}
+	if body.NewPassword != body.Confirm {
+		writeJSON(w, 400, errorResponse{Error: "两次输入的新密码不一致"})
+		return
+	}
+	if msg := webauth.PasswordProblem(body.NewPassword); msg != "" {
+		writeJSON(w, 400, errorResponse{Error: msg})
+		return
+	}
+	s.passwdMu.Lock()
+	defer s.passwdMu.Unlock()
+	cfg := s.cfg.Get()
+	if cfg.PasswordHash != "" && !webauth.VerifyPassword(cfg.PasswordHash, body.CurrentPassword) {
+		writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "当前访问密码不正确"})
+		return
+	}
+	hash, err := webauth.HashPassword(body.NewPassword)
+	if err != nil {
+		writeJSON(w, 500, errorResponse{Error: apperr.Format(err)})
+		return
+	}
+	cfg.PasswordHash = hash
+	if err := s.cfg.Replace(cfg); err != nil {
+		writeJSON(w, 500, errorResponse{Error: apperr.Format(err)})
+		return
+	}
+	setPasswordCookie(w, hash)
+	e := oplog.New("password_change")
+	e.Summary = "修改访问密码"
+	s.recordOp(r, e)
+	writeJSON(w, 200, okResponse{OK: true})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -718,7 +918,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !s.authed(r) {
 		out := statusUnauthResponse{
 			Version: Version,
-			Auth:    map[string]any{"required": cfg.AccessToken != "", "ok": false},
+			Auth:    map[string]any{"required": true, "ok": false, "mode": authMode(cfg)},
 		}
 		if s.e != nil {
 			// 只给「是否在跑、跑到哪个阶段」两个非敏感字段：State 里还有
@@ -779,8 +979,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Version:       Version,
 		Cleanup:       s.cleanupSummary(r.Context()),
 		Auth: map[string]any{
-			"required": cfg.AccessToken != "",
+			"required": true,
 			"ok":       s.authed(r),
+			"mode":     authMode(cfg),
 		},
 		Config: statusConfigView(cfg),
 		Hash: map[string]any{

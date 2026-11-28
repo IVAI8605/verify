@@ -19,10 +19,11 @@ var statusKeyAliases = map[string]string{
 
 // 明确不向前端下发的字段：内部路径、监听地址、目录浏览历史、访问令牌。
 var statusKeySkip = map[string]bool{
-	"addr":         true,
-	"data_dir":     true,
-	"browse_roots": true,
-	"access_token": true,
+	"addr":          true,
+	"data_dir":      true,
+	"browse_roots":  true,
+	"access_token":  true,
+	"password_hash": true,
 }
 
 // TestStatusConfigViewCoversConfig 防止配置结构体新增字段后忘记加进 /api/status：

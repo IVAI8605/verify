@@ -13,7 +13,7 @@
     <div class="side-top">
       <span class="mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/><path d="M8 9.5h5M8 12h5"/></svg></span>
       <span class="wordmark">查重助手</span>
-      <span class="ver mono" id="ver">v4.5.3</span>
+      <span class="ver mono" id="ver">v4.5.4</span>
     </div>
     <nav class="side-nav" id="tabs">
       <div class="ngroup">
@@ -102,11 +102,12 @@
 </div></div>
 
 <div id="login"><div class="box">
-  <h2>需要访问令牌</h2>
-  <p>请输入此应用设置的访问令牌后继续。</p>
-  <input id="tokenInput" type="password" placeholder="访问令牌" autocomplete="current-password" aria-label="访问令牌">
+  <h2 id="loginTitle">需要访问密码</h2>
+  <p id="loginDesc">请输入此应用设置的访问密码后继续。</p>
+  <input id="tokenInput" type="password" placeholder="访问密码" autocomplete="current-password" aria-label="访问密码">
+  <input id="loginConfirm" type="password" placeholder="再次输入访问密码" autocomplete="new-password" aria-label="再次输入访问密码" hidden>
   <button class="btn primary" id="loginBtn">进入</button>
-  <p class="hint" style="margin-top:10px">首次启动会自动生成令牌，保存在应用数据目录下的 access-token.txt（fnOS 上默认在 @appdata/verify/data）。登录后可在设置页更换或清除。</p>
+  <p class="hint" id="loginHint" style="margin-top:10px">密码只保存加盐哈希，不会写进日志或配置文件明文。忘记密码时可停止应用、从 config.json 删除 password_hash 后重启重新设置。</p>
 </div></div>
 
 <div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>

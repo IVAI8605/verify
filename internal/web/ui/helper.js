@@ -633,7 +633,7 @@ async function api(url, opts){
   if (!h.has('X-Requested-With')) h.set('X-Requested-With', 'verify');
   o.headers = h;
   const r = await fetch(url, o);
-  if (r.status === 401) { showLogin(); throw new Error('需要访问令牌'); }
+  if (r.status === 401) { showLogin(S.authMode); throw new Error('需要访问密码'); }
   const ct = r.headers.get('content-type') || '';
   if (!r.ok) {
     let msg = '请求失败（' + r.status + '）';
@@ -654,7 +654,31 @@ function postJSON(url, obj){
   return api(url, { method:'POST', headers:{'Content-Type':'application/json', 'X-Requested-With':'verify'}, body: JSON.stringify(obj || {}) });
 }
 
-function showLogin(){ $('login').classList.add('show'); }
+function showLogin(mode){
+  if (mode) S.authMode = mode;
+  const m = S.authMode || 'password';
+  const setup = m === 'setup';
+  const legacy = m === 'legacy_token';
+  const title = $('loginTitle'), desc = $('loginDesc'), inp = $('tokenInput');
+  const confirm = $('loginConfirm'), hint = $('loginHint'), btn = $('loginBtn');
+  if (title) title.textContent = setup ? '首次使用：设置访问密码' : (legacy ? '需要旧版访问令牌' : '需要访问密码');
+  if (desc) desc.textContent = setup
+    ? '这台设备还没有访问密码。请设置一个至少 8 位的密码，之后每次打开页面都要输入。'
+    : (legacy ? '当前配置里还是旧版访问令牌。输入令牌登录后，请到设置页设置访问密码。' : '请输入此应用设置的访问密码后继续。');
+  if (inp) {
+    inp.value = '';
+    inp.placeholder = setup ? '设置访问密码（至少 8 位）' : (legacy ? '旧版访问令牌' : '访问密码');
+    inp.setAttribute('autocomplete', setup ? 'new-password' : 'current-password');
+    inp.setAttribute('aria-label', setup ? '设置访问密码' : (legacy ? '旧版访问令牌' : '访问密码'));
+  }
+  if (confirm) { confirm.hidden = !setup; confirm.value = ''; }
+  if (btn) btn.textContent = setup ? '设置并进入' : '进入';
+  if (hint) hint.textContent = setup
+    ? '密码只保存加盐哈希（PBKDF2-SHA256），不会写进日志或配置文件明文；设置后所有设备都要用这个密码登录。'
+    : (legacy ? '登录成功后建议立即设置访问密码；旧令牌仍可留给脚本调用接口。' : '密码只保存加盐哈希。忘记密码时可停止应用，从 config.json 删除 password_hash 后重启重新设置。');
+  $('login').classList.add('show');
+  if (inp) inp.focus();
+}
 
 function hideLogin(){ $('login').classList.remove('show'); }
 
@@ -681,7 +705,7 @@ async function refreshStatus(){
   // v3.10.5：状态一变就同步写操作按钮的可用性（扫描中置灰，结束自动恢复）。
   applyOpsGuard();
   updateTabVisibility();
-  if (st.auth && st.auth.required && !st.auth.ok) { showLogin(); return st; }
+  if (st.auth && st.auth.required && !st.auth.ok) { showLogin(st.auth && st.auth.mode); return st; }
   hideLogin();
   if (!st.ffmpeg || !st.ffmpeg.available) {
     // 仅提示一次

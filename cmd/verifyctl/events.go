@@ -16,7 +16,7 @@ import (
 // Ctrl+C / SIGTERM 停止。这是唯一不走「读全响应再包信封」的命令——SSE 是无限心跳流，
 // io.ReadAll 会一直阻塞到客户端超时再失败，既拿不到事件又白等。
 // 返回语义退出码：0 正常或被用户中断，1 本地输出失败，3 鉴权，4 连接/读流失败，5/6 服务端错误。
-func runEventStream(out io.Writer, baseURL, token string) int {
+func runEventStream(out io.Writer, baseURL, token, password string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -26,7 +26,9 @@ func runEventStream(out io.Writer, baseURL, token string) int {
 		_ = writeError(out, "events", &ErrDetail{Message: "构造事件流请求失败（" + err.Error() + "）"})
 		return 1
 	}
-	if token != "" {
+	if password != "" {
+		req.SetBasicAuth("", password)
+	} else if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("Accept", "text/event-stream")
