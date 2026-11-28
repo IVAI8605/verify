@@ -200,7 +200,7 @@ function scanSummaryHtml(state){
   const stage = total > 0
     ? `${done.toLocaleString()} / ${total.toLocaleString()}（${Math.round(done / total * 100)}%）`
     : (state.running ? '统计中' : '—');
-  const stageSub = state.running ? '进行中' : '已完成';
+  const stageSub = state.running ? '进行中' : '已结束';
   const skipText = state.skip_reason
     || (skipped || skippedDirs ? `跳过 ${skipped} 个文件、${skippedDirs} 个文件夹` : '没有跳过文件');
   return `<section class="section scan-summary" aria-label="本次扫描概况">
@@ -235,8 +235,9 @@ function renderTypeChart(state){
   const totalFiles = types.reduce((a, t) => a + Number(t.files || 0), 0);
   const useBytes = totalBytes > 0;
   const total = useBytes ? totalBytes : totalFiles;
-  let items = types.slice(0, 5);
-  const rest = types.slice(5);
+  let items = types;
+  // v4.5.1：不再把尾部类型并成「其他」——按实际扩展名逐个列出，图例可滚动。
+  const rest = [];
   if (rest.length) {
     items.push({
       ext: '', other: true,
@@ -385,7 +386,7 @@ function renderOverview(st){
     return `<div class="vol" data-path="${esc(v.path)}"><span class="vol-name" title="${esc(v.path)}">${esc(v.path)}</span>
       <span class="vol-meter"><i style="width:${pct.toFixed(1)}%"></i></span>
       <span class="vol-figs">${fmtB(used)} / ${fmtB(v.total)}　剩余 ${fmtB(v.free)}</span></div>`;
-  }).join('') : `<p class="vol-empty">还没有扫描目录。存储卷只列出扫描范围内的卷，到「设置 → 扫描范围」添加后显示占用。</p>`;
+  }).join('') : `<p class="vol-empty">还没有扫描目录。先在飞牛「系统设置 → 应用 → 查重助手」授权文件夹，再到「设置 → 路径与安全」添加。 <button class="btn ghost" data-act="go-paths">去添加</button></p>`;
   const noteHtml = (exactGroups + nameGroups) > 0
     ? `<div class="ledger-note">
         <span class="note-line"><b>精确重复</b> ${exactGroups.toLocaleString()} 组 · ${(c.exact_files||0).toLocaleString()} 个文件 · 可释放 ${fmtB(c.exact_waste)}</span>

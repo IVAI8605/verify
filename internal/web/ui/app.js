@@ -659,6 +659,7 @@ document.addEventListener('click', async (ev) => {
     renderWizard();
     return;
   }
+  if (act === 'go-paths') { S.setPane = 'paths'; await switchTab('settings'); return; }
   if (act === 'wiz-prev') { readWizardInputs(); S.wizard.step--; renderWizard(); return; }
   if (act === 'wiz-advanced') {
     if (S.wizard) {
