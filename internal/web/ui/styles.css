@@ -942,3 +942,9 @@ body.onboard-open{overflow:hidden}
 }
 /* v4.5.1：类型分布图例按实际扩展名逐个列，超出高度滚动，不挤占首屏 */
 .tc-legend{max-height:260px;overflow:auto;align-content:start;padding-right:var(--space-2xs)}
+
+/* v4.5.2：类型图例最多 3 列、固定高度滚动；长尾类型默认折叠，可展开 */
+.type-chart .tc-legend{grid-template-columns:repeat(3,minmax(0,1fr));max-height:240px;overflow:auto;align-content:start}
+@media (max-width:75rem){.type-chart .tc-legend{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:48rem){.type-chart .tc-legend{grid-template-columns:1fr}}
+.tc-legend .tc-more{grid-column:1/-1;padding-top:var(--space-2xs)}

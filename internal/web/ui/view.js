@@ -235,31 +235,34 @@ function renderTypeChart(state){
   const totalFiles = types.reduce((a, t) => a + Number(t.files || 0), 0);
   const useBytes = totalBytes > 0;
   const total = useBytes ? totalBytes : totalFiles;
-  let items = types;
-  // v4.5.1：不再把尾部类型并成「其他」——按实际扩展名逐个列出，图例可滚动。
-  const rest = [];
-  if (rest.length) {
-    items.push({
-      ext: '', other: true,
-      files: rest.reduce((a, t) => a + Number(t.files || 0), 0),
-      bytes: rest.reduce((a, t) => a + Number(t.bytes || 0), 0)
-    });
-  }
+  // v4.5.1：不再把尾部类型并成「其他」——环形图按实际扩展名逐个上色；
+  // v4.5.2：图例默认只列占比前 12 类，其余可展开查看。扫描范围若包含开发缓存
+  //（Gradle / node_modules / Go 工具链），扩展名会长出上百种，一次全铺开会淹没真正的类型。
+  const TOP_SHOWN = 12;
+  const items = types;
+  const legendTypes = S.typeChartAll ? types : types.slice(0, TOP_SHOWN);
+  const restCount = types.length - legendTypes.length;
   const C = 2 * Math.PI * 42;
   let offset = 0;
-  const colorOf = (t, i) => t.other ? 'var(--chart-8)' : `var(--chart-${i % 7 + 1})`;
+  const colorOf = (i) => `var(--chart-${i % 7 + 1})`;
   const segs = items.map((t, i) => {
     const v = useBytes ? Number(t.bytes || 0) : Number(t.files || 0);
     const len = total > 0 ? C * v / total : 0;
-    const label = t.other ? '其他' : typeChartLabel(t.ext);
-    const seg = `<circle cx="60" cy="60" r="42" fill="none" stroke="${colorOf(t, i)}" stroke-width="18" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)"><title>${esc(label)}：${Number(t.files || 0).toLocaleString()} 个 · ${fmtB(t.bytes)}</title></circle>`;
+    const label = typeChartLabel(t.ext);
+    const seg = `<circle cx="60" cy="60" r="42" fill="none" stroke="${colorOf(i)}" stroke-width="18" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)"><title>${esc(label)}：${Number(t.files || 0).toLocaleString()} 个 · ${fmtB(t.bytes)}</title></circle>`;
     offset += len;
     return seg;
   }).join('');
-  const legend = items.map((t, i) => {
-    const label = t.other ? '其他' : typeChartLabel(t.ext);
-    return `<li><span class="tc-dot" style="background:${colorOf(t, i)}"></span><span class="tc-ext">${esc(label)}</span><span class="tc-meta">${Number(t.files || 0).toLocaleString()} 个 · ${fmtB(t.bytes)}</span></li>`;
+  const legend = legendTypes.map((t, i) => {
+    const label = typeChartLabel(t.ext);
+    return `<li><span class="tc-dot" style="background:${colorOf(i)}"></span><span class="tc-ext">${esc(label)}</span><span class="tc-meta">${Number(t.files || 0).toLocaleString()} 个 · ${fmtB(t.bytes)}</span></li>`;
   }).join('');
+  const restFiles = types.slice(TOP_SHOWN).reduce((a, t) => a + Number(t.files || 0), 0);
+  const more = types.length > TOP_SHOWN
+    ? (S.typeChartAll
+        ? '<li class="tc-more"><button class="btn ghost" data-act="typechart-more">收起，只看前 12 类</button></li>'
+        : `<li class="tc-more"><button class="btn ghost" data-act="typechart-more">展开其余 ${restCount} 类（${restFiles.toLocaleString()} 个文件）</button></li>`)
+    : '';
   return `<section class="section type-chart" aria-label="文件类型分布">
     <h2 class="section-title">文件类型分布</h2>
     <div class="tc-wrap">
@@ -268,7 +271,7 @@ function renderTypeChart(state){
         <text x="60" y="57" text-anchor="middle" class="tc-total">${fmtB(totalBytes || totalFiles)}</text>
         <text x="60" y="72" text-anchor="middle" class="tc-sub">${useBytes ? '按占用' : '按文件数'}</text>
       </svg>
-      <ul class="tc-legend">${legend}</ul>
+      <ul class="tc-legend">${legend}${more}</ul>
     </div>
   </section>`;
 }

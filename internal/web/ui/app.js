@@ -660,6 +660,12 @@ document.addEventListener('click', async (ev) => {
     return;
   }
   if (act === 'go-paths') { S.setPane = 'paths'; await switchTab('settings'); return; }
+  if (act === 'typechart-more') {
+    S.typeChartAll = !S.typeChartAll;
+    const box = $('typeChart');
+    if (box) { box.dataset.key = ''; box.innerHTML = renderTypeChart((S.status && S.status.state) || {}); }
+    return;
+  }
   if (act === 'wiz-prev') { readWizardInputs(); S.wizard.step--; renderWizard(); return; }
   if (act === 'wiz-advanced') {
     if (S.wizard) {
